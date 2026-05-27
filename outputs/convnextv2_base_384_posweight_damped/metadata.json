@@ -1,0 +1,148 @@
+{
+  "experiment_id": "EXP-20260527-133631-convnextv2_base_384_posweight_damped",
+  "completed_at": "2026-05-27T13:36:31+08:00",
+  "experiment_name": "convnextv2_base_384_posweight_damped",
+  "model_name": "convnextv2_base.fcmae_ft_in22k_in1k",
+  "image_size": 384,
+  "folds": 5,
+  "checkpoint_files": [
+    "fold_0_best.pth",
+    "fold_1_best.pth",
+    "fold_2_best.pth",
+    "fold_3_best.pth",
+    "fold_4_best.pth"
+  ],
+  "fold_metrics": [
+    {
+      "fold": 0,
+      "positive_count": 2148,
+      "negative_count": 1930,
+      "raw_pos_weight": 0.8985102420856611,
+      "pos_weight_dampening": 0.5,
+      "pos_weight": 0.44925512104283055,
+      "f1": 0.9962825278810409,
+      "precision": 0.9944341372912802,
+      "recall": 0.9981378026070763,
+      "threshold": 0.5,
+      "positive_predictions": 539
+    },
+    {
+      "fold": 1,
+      "positive_count": 2148,
+      "negative_count": 1930,
+      "raw_pos_weight": 0.8985102420856611,
+      "pos_weight_dampening": 0.5,
+      "pos_weight": 0.44925512104283055,
+      "f1": 0.9925650557620818,
+      "precision": 0.9907235621521335,
+      "recall": 0.994413407821229,
+      "threshold": 0.13,
+      "positive_predictions": 539
+    },
+    {
+      "fold": 2,
+      "positive_count": 2148,
+      "negative_count": 1930,
+      "raw_pos_weight": 0.8985102420856611,
+      "pos_weight_dampening": 0.5,
+      "pos_weight": 0.44925512104283055,
+      "f1": 0.9935125115848007,
+      "precision": 0.988929889298893,
+      "recall": 0.9981378026070763,
+      "threshold": 0.66,
+      "positive_predictions": 542
+    },
+    {
+      "fold": 3,
+      "positive_count": 2148,
+      "negative_count": 1931,
+      "raw_pos_weight": 0.898975791433892,
+      "pos_weight_dampening": 0.5,
+      "pos_weight": 0.449487895716946,
+      "f1": 0.9962825278810409,
+      "precision": 0.9944341372912802,
+      "recall": 0.9981378026070763,
+      "threshold": 0.5,
+      "positive_predictions": 539
+    },
+    {
+      "fold": 4,
+      "positive_count": 2148,
+      "negative_count": 1931,
+      "raw_pos_weight": 0.898975791433892,
+      "pos_weight_dampening": 0.5,
+      "pos_weight": 0.449487895716946,
+      "f1": 0.9879963065558633,
+      "precision": 0.9798534798534798,
+      "recall": 0.9962756052141527,
+      "threshold": 0.5,
+      "positive_predictions": 546
+    }
+  ],
+  "oof_metrics": {
+    "f1": 0.9923890848338592,
+    "precision": 0.9892672094744633,
+    "recall": 0.9955307262569832,
+    "threshold": 0.51,
+    "positive_predictions": 2702
+  },
+  "optimal_threshold_file": "/root/project/stage2/outputs/convnextv2_base_384_posweight_damped/optimal_threshold.json",
+  "config": {
+    "experiment_name": "convnextv2_base_384_posweight_damped",
+    "paths": {
+      "data_dir": "/root/project/stage2/data",
+      "weights_dir": "/root/project/stage2/weights",
+      "outputs_dir": "/root/project/stage2/outputs",
+      "docs_dir": "/root/project/stage2/docs",
+      "train_image_dir": "/root/project/stage2/data/train_images",
+      "test_image_dir": "/root/project/stage2/data/test_images",
+      "train_csv": "/root/project/stage2/data/train_labels.csv",
+      "sample_submission_csv": "/root/project/stage2/data/sample_submission.csv"
+    },
+    "data": {
+      "id_col": "id",
+      "label_col": "label",
+      "image_size": 384,
+      "num_workers": 8
+    },
+    "model": {
+      "name": "convnextv2_base.fcmae_ft_in22k_in1k",
+      "drop_rate": 0.0,
+      "drop_path_rate": 0.0,
+      "use_pretrained": true,
+      "pretrained_file": "convnextv2_base.fcmae_ft_in22k_in1k.pth"
+    },
+    "augment": {
+      "color_jitter": 0.45,
+      "clahe_probability": 0.6,
+      "geometry_probability": 0.5,
+      "degradation_probability": 0.35,
+      "coarse_dropout_probability": 0.3,
+      "tta_names": [
+        "identity"
+      ]
+    },
+    "train": {
+      "seed": 2026,
+      "folds": 5,
+      "epochs": 24,
+      "batch_size": 8,
+      "valid_batch_size": 16,
+      "accumulation_steps": 2,
+      "learning_rate": 3e-05,
+      "min_learning_rate": 2e-07,
+      "weight_decay": 0.05,
+      "patience": 7,
+      "max_grad_norm": 1.0,
+      "amp": true,
+      "pos_weight_dampening": 0.5,
+      "loss_name": "BCEWithLogitsLoss",
+      "optimizer_name": "AdamW",
+      "scheduler_name": "CosineAnnealingLR"
+    },
+    "inference": {
+      "batch_size": 24,
+      "threshold": 0.5
+    }
+  }
+}
