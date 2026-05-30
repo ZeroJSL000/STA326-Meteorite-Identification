@@ -9,4 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
-/data
+data/
+outputs/
+weights/
+docs/

@@ -14,7 +14,7 @@ from PIL import Image, UnidentifiedImageError
 from torch import Tensor
 from torch.utils.data import Dataset
 
-from config import AugmentConfig
+from utils.config import AugmentConfig
 
 
 def _pad_to_square(image_size: int) -> A.BasicTransform:
@@ -77,70 +77,72 @@ def _image_compression() -> A.BasicTransform:
         return A.ImageCompression(quality_lower=75, quality_upper=98, p=1.0)
 
 
-def _coarse_dropout(image_size: int, probability: float) -> A.BasicTransform:
-    """增强局部遮挡，降低对标尺、手指等局部伪特征的依赖。"""
+def _coarse_dropout(image_size: int, config: AugmentConfig) -> A.BasicTransform:
+    """按配置遮挡局部伪特征，降低对标尺、手指等噪声的记忆。"""
 
-    min_size = int(image_size * 0.03)
-    max_size = min(64, image_size)
+    min_size = max(1, int(image_size * 0.03))
+    max_height = min(config.coarse_dropout_max_height, image_size)
+    max_width = min(config.coarse_dropout_max_width, image_size)
+    if config.coarse_dropout_max_holes <= 0:
+        raise ValueError("coarse_dropout_max_holes 必须大于 0。")
     try:
         return A.CoarseDropout(
-            num_holes_range=(1, 8),
-            hole_height_range=(min_size, max_size),
-            hole_width_range=(min_size, max_size),
+            num_holes_range=(1, config.coarse_dropout_max_holes),
+            hole_height_range=(min_size, max_height),
+            hole_width_range=(min_size, max_width),
             fill=0,
-            p=probability,
+            p=config.coarse_dropout_probability,
         )
     except TypeError:
         return A.CoarseDropout(
-            max_holes=8,
-            max_height=max_size,
-            max_width=max_size,
+            max_holes=config.coarse_dropout_max_holes,
+            max_height=max_height,
+            max_width=max_width,
             min_height=min_size,
             min_width=min_size,
             fill_value=0,
-            p=probability,
+            p=config.coarse_dropout_probability,
         )
 
 
 def build_train_transforms(image_size: int, config: AugmentConfig) -> A.Compose:
-    """构建回退基线上的 aspect-safe 强增强。"""
+    """构建 GAP + LLRD 实验的 aspect-safe 强增强。"""
 
-    return A.Compose(
-        [
-            *_aspect_safe_resize(image_size),
-            _shift_scale_rotate(config.geometry_probability),
-            A.ColorJitter(
-                brightness=config.color_jitter,
-                contrast=config.color_jitter,
-                saturation=config.color_jitter,
-                hue=0.12,
-                p=0.75,
-            ),
-            A.RandomGamma(gamma_limit=(70, 135), p=0.45),
-            A.HueSaturationValue(
-                hue_shift_limit=18,
-                sat_shift_limit=32,
-                val_shift_limit=22,
-                p=0.5,
-            ),
-            A.CLAHE(
-                clip_limit=(1.0, 2.5),
-                tile_grid_size=(8, 8),
-                p=config.clahe_probability,
-            ),
-            A.OneOf(
-                [
-                    A.Blur(blur_limit=(3, 5), p=1.0),
-                    A.GaussNoise(p=1.0),
-                    _image_compression(),
-                ],
-                p=config.degradation_probability,
-            ),
-            _coarse_dropout(image_size, config.coarse_dropout_probability),
-            A.Normalize(),
-            ToTensorV2(),
-        ]
-    )
+    transforms: list[A.BasicTransform] = [
+        *_aspect_safe_resize(image_size),
+        _shift_scale_rotate(config.geometry_probability),
+        A.ColorJitter(
+            brightness=config.color_jitter,
+            contrast=config.color_jitter,
+            saturation=config.color_jitter,
+            hue=0.12,
+            p=0.75,
+        ),
+        A.RandomGamma(gamma_limit=(70, 135), p=0.45),
+        A.HueSaturationValue(
+            hue_shift_limit=18,
+            sat_shift_limit=32,
+            val_shift_limit=22,
+            p=0.5,
+        ),
+        A.CLAHE(
+            clip_limit=(1.0, 2.5),
+            tile_grid_size=(8, 8),
+            p=config.clahe_probability,
+        ),
+        A.OneOf(
+            [
+                A.Blur(blur_limit=(3, 5), p=1.0),
+                A.GaussNoise(p=1.0),
+                _image_compression(),
+            ],
+            p=config.degradation_probability,
+        ),
+    ]
+    if config.coarse_dropout_enabled:
+        transforms.append(_coarse_dropout(image_size, config))
+    transforms.extend([A.Normalize(), ToTensorV2()])
+    return A.Compose(transforms)
 
 
 def build_valid_transforms(image_size: int, tta_name: str = "identity") -> A.Compose:

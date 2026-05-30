@@ -3,24 +3,66 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import torch
-from torch import nn
+import torch.nn.functional as F
+from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from config import TrainConfig
-from metrics import sigmoid
+from utils.config import TrainConfig
+from utils.metrics import sigmoid
 
 
-def build_loss(pos_weight: float, device: torch.device) -> nn.Module:
-    """按当前训练折类别分布创建加权二元交叉熵损失。"""
+class SmoothedBCEWithLogitsLoss(nn.Module):
+    """支持手动 label smoothing 与可选 pos_weight 的 BCEWithLogitsLoss。"""
 
-    if not np.isfinite(pos_weight) or pos_weight <= 0:
-        raise ValueError(f"pos_weight 必须为正有限值，收到: {pos_weight}")
-    weight_tensor = torch.tensor([pos_weight], dtype=torch.float32, device=device)
-    return nn.BCEWithLogitsLoss(pos_weight=weight_tensor)
+    def __init__(
+        self,
+        label_smoothing: float = 0.0,
+        pos_weight: Tensor | None = None,
+    ) -> None:
+        super().__init__()
+        if not 0.0 <= label_smoothing < 1.0:
+            raise ValueError("label_smoothing 必须在 [0, 1) 范围内。")
+        self.label_smoothing = float(label_smoothing)
+        if pos_weight is not None:
+            self.register_buffer("pos_weight", pos_weight)
+        else:
+            self.pos_weight = None
+
+    def forward(self, logits: Tensor, targets: Tensor) -> Tensor:
+        if self.label_smoothing > 0.0:
+            targets = (
+                targets * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
+            )
+        return F.binary_cross_entropy_with_logits(
+            logits,
+            targets,
+            pos_weight=self.pos_weight,
+        )
+
+
+def build_loss(
+    train_config: TrainConfig,
+    device: torch.device,
+    pos_weight: float | None = None,
+) -> nn.Module:
+    """按配置创建 BCE 损失；none 模式不注入 pos_weight。"""
+
+    weight_tensor: Tensor | None = None
+    if train_config.pos_weight_mode == "dynamic":
+        if pos_weight is None or not np.isfinite(pos_weight) or pos_weight <= 0:
+            raise ValueError(f"动态 pos_weight 必须为正有限值，收到: {pos_weight}")
+        weight_tensor = torch.tensor([pos_weight], dtype=torch.float32, device=device)
+    elif train_config.pos_weight_mode != "none":
+        raise ValueError(f"不支持的 pos_weight_mode: {train_config.pos_weight_mode}")
+    return SmoothedBCEWithLogitsLoss(
+        label_smoothing=train_config.label_smoothing,
+        pos_weight=weight_tensor,
+    )
 
 
 def _autocast_context(device: torch.device, enabled: bool) -> Callable:
@@ -40,8 +82,9 @@ def train_one_epoch(
     device: torch.device,
     epoch: int,
     train_config: TrainConfig,
+    model_ema: Any | None = None,
 ) -> float:
-    """执行一次 AMP 与梯度累积训练，不引入额外标签混合策略。"""
+    """执行一次 AMP 与梯度累积训练，并在优化器更新后同步 EMA。"""
 
     model.train()
     running_loss = 0.0
@@ -64,8 +107,12 @@ def train_one_epoch(
                 model.parameters(),
                 train_config.max_grad_norm,
             )
+            old_scale = scaler.get_scale() if scaler.is_enabled() else None
             scaler.step(optimizer)
             scaler.update()
+            step_was_skipped = old_scale is not None and scaler.get_scale() < old_scale
+            if model_ema is not None and not step_was_skipped:
+                model_ema.update(model)
             optimizer.zero_grad(set_to_none=True)
         running_loss += float(loss.detach().item()) * images.size(0)
         progress.set_postfix(loss=f"{loss.item():.4f}")

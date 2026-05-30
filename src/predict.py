@@ -11,14 +11,16 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from config import ExperimentConfig, load_config, resolve_image_dir
-from dataset import BinaryImageDataset, build_valid_transforms
-from engine import predict_probabilities
-from model import build_model, load_weights_flexible
+from utils.config import ExperimentConfig, load_config, resolve_image_dir
+from utils.dataset import BinaryImageDataset, build_valid_transforms
+from utils.engine import predict_probabilities
+from models.builder import build_model
+from utils.checkpoint import load_weights_flexible
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="执行折模型 Baseline 集成推理")
+    parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--experiment-name", type=str, default=None)
     parser.add_argument("--checkpoint-dir", type=Path, default=None)
     return parser.parse_args()
@@ -140,7 +142,7 @@ def run_prediction(
 
 def main() -> None:
     args = parse_args()
-    config = load_config()
+    config = load_config(args.config)
     if args.experiment_name is not None:
         config.experiment_name = args.experiment_name
         config.create_output_dirs()

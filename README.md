@@ -1,7 +1,7 @@
 # 图像二分类 ConvNeXtV2 Baseline
 
 当前管线严格复现历史最佳方向：`convnextv2_base.fcmae_ft_in22k_in1k`、
-`384 x 384`、`GeM(p=3.0)` 池化、单 logit 分类头、动态加权
+`384 x 384`、默认 GAP 池化、单 logit 分类头、动态加权
 `BCEWithLogitsLoss`、`AdamW` 与 `CosineAnnealingLR`。验证和测试图像
 只执行保持比例的缩放及零填充，不会将石头主体强行拉伸。
 
@@ -45,7 +45,7 @@ Normalize()
 
 训练在该 aspect-safe 基础上加入 `ColorJitter`、`RandomGamma`、
 `HueSaturationValue`、`CLAHE`、`ShiftScaleRotate`、轻度模糊/噪声/JPEG
-压缩与强化 `CoarseDropout(max_holes=8, max_size=64)`。
+压缩，以及由 YAML 控制的 `CoarseDropout`。
 
 ## 执行实验
 
@@ -54,18 +54,23 @@ chmod +x scripts/run_experiment.sh
 ./scripts/run_experiment.sh
 ```
 
-当前实验从 LB `0.73631` 的高分基线回退并叠加 GeM/遮挡优化，默认采用：
+当前实验升级为 YAML 配置驱动，默认读取 `configs/convnextv2_base_384_ema_smooth.yaml`：
 
 ```text
-pos_weight = negative_count / positive_count
-pooling = GeM(p_init=3.0)
+pos_weight = disabled (plain BCE)
+label_smoothing = 0.05
+EMA = enabled(decay=0.999)
+pooling = GAP (timm default)
+head_lr = 5e-4
+backbone_lr = 5e-5
+CoarseDropout = tuned(max_holes=4, max_size=48)
 OOF threshold search range = [0.10, 0.90], step=0.01
 ```
 
-可通过环境变量调整 GeM 初值，例如
-`GEM_P=3.5 ./scripts/run_experiment.sh`。
-默认输出位于 `outputs/convnextv2_base_384_gem_rollback/`，模型
-checkpoint 位于 `weights/checkpoints/convnextv2_base_384_gem_rollback/`。
+推荐通过复制并修改 `configs/*.yaml` 管理新实验，例如：
+`bash scripts/run_experiment.sh configs/convnextv2_base_384_ema_smooth.yaml`。
+默认输出位于 `outputs/convnextv2_base_384_ema_smooth/`，模型
+checkpoint 位于 `weights/checkpoints/convnextv2_base_384_ema_smooth/`。
 每次完整训练结束后，
 `src/train.py` 会自动向 `docs/experiment_log.md` 追加配置、各折 F1 和
 OOF 阈值；提交线上分数后，在对应实验条目补充 LB Score 与结论。

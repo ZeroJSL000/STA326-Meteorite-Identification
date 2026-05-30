@@ -49,14 +49,14 @@ def compute_binary_metrics(
 def find_optimal_threshold(
     y_true: np.ndarray,
     y_prob: np.ndarray,
-    threshold_min: float = 0.10,
-    threshold_max: float = 0.90,
+    threshold_min: float = 0.40,
+    threshold_max: float = 0.60,
     step: float = 0.01,
 ) -> BinaryMetrics:
     """在固定网格上搜索 F1 最大的概率阈值。
 
-    固定搜索网格避免通过测试集类别数施加人为约束；F1 相同时选择最接近
-    0.5 的阈值，以减少对一次 OOF 波动的过拟合。
+    固定搜索网格避免通过测试集类别数施加人为约束；本轮实验将搜索区间
+    收缩到 0.5 附近，减少验证泄露或 OOF 波动造成的极端阈值。
     """
 
     targets = np.asarray(y_true, dtype=np.int64)

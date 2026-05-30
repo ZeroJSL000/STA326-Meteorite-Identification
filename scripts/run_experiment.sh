@@ -1,12 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 可通过环境变量覆盖训练批量大小或 epochs 进行调试。
+if [[ $# -eq 0 ]]; then
+  echo "❌ 错误: 未提供配置文件。" >&2
+  echo "💡 用法: bash $0 <path_to_yaml_config>" >&2
+  echo "📝 示例: bash $0 configs/cswin_base_384_ema_smooth.yaml" >&2
+  exit 1
+fi
+
+CONFIG_PATH="$1"
+
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
-export EXPERIMENT_NAME="${EXPERIMENT_NAME:-convnextv2_base_384_gem_rollback}"
+if [[ ! -f "${CONFIG_PATH}" ]]; then
+  echo "❌ 错误: 找不到配置文件 -> ${CONFIG_PATH}" >&2
+  exit 1
+fi
+
 mkdir -p weights outputs docs
 
-uv run python src/train.py
-uv run python src/predict.py --experiment-name "${EXPERIMENT_NAME}"
+echo "🚀 [1/2] 开始训练 (Training) | Config: ${CONFIG_PATH}"
+uv run python src/train.py --config "${CONFIG_PATH}"
+
+echo "🚀 [2/2] 开始推理 (Prediction) | Config: ${CONFIG_PATH}"
+uv run python src/predict.py --config "${CONFIG_PATH}"
+
+echo "✅ 实验运行完毕！"

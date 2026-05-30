@@ -13,18 +13,20 @@ import pandas as pd
 import torch
 from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader
+from timm.utils import ModelEmaV2
 
-from config import ExperimentConfig, load_config, resolve_image_dir
-from dataset import BinaryImageDataset, build_train_transforms, build_valid_transforms
-from engine import build_loss, train_one_epoch, validate_one_epoch
-from metrics import BinaryMetrics, find_optimal_threshold
-from model import build_model
+from utils.config import ExperimentConfig, load_config, resolve_image_dir
+from utils.dataset import BinaryImageDataset, build_train_transforms, build_valid_transforms
+from utils.engine import build_loss, train_one_epoch, validate_one_epoch
+from utils.metrics import BinaryMetrics, find_optimal_threshold
+from models.builder import build_model
 
 
 def parse_args() -> argparse.Namespace:
     """提供调试与实验命名所需的命令行覆盖入口。"""
 
     parser = argparse.ArgumentParser(description="训练 ConvNeXtV2 Baseline")
+    parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--folds", type=int, default=None)
@@ -110,6 +112,54 @@ def create_grad_scaler(device: torch.device, amp: bool) -> torch.amp.GradScaler:
     )
 
 
+def build_optimizer(
+    model: torch.nn.Module,
+    config: ExperimentConfig,
+) -> torch.optim.Optimizer:
+    """按 head/backbone 分组创建 LLRD AdamW 优化器。"""
+
+    head_parameters = []
+    backbone_parameters = []
+    head_names: list[str] = []
+    backbone_names: list[str] = []
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad:
+            continue
+        if "head" in name:
+            head_parameters.append(parameter)
+            head_names.append(name)
+        else:
+            backbone_parameters.append(parameter)
+            backbone_names.append(name)
+    if not head_parameters:
+        raise RuntimeError("未找到名称包含 `head` 的分类头参数，无法应用 LLRD。")
+    if not backbone_parameters:
+        raise RuntimeError("未找到 backbone 参数，无法应用 LLRD。")
+    head_lr = config.train.learning_rate
+    backbone_lr = head_lr * config.train.backbone_lr_factor
+    print(
+        "LLRD 参数分组: "
+        f"head={len(head_names)} tensors lr={head_lr:.3e}; "
+        f"backbone={len(backbone_names)} tensors lr={backbone_lr:.3e}"
+    )
+    return torch.optim.AdamW(
+        [
+            {
+                "params": head_parameters,
+                "lr": head_lr,
+                "weight_decay": config.train.weight_decay,
+                "name": "head",
+            },
+            {
+                "params": backbone_parameters,
+                "lr": backbone_lr,
+                "weight_decay": config.train.weight_decay,
+                "name": "backbone",
+            },
+        ]
+    )
+
+
 def save_json(payload: object, path: Path) -> None:
     """以 UTF-8 可读 JSON 保存元数据。"""
 
@@ -144,14 +194,21 @@ def validate_inputs(config: ExperimentConfig, frame: pd.DataFrame) -> Path:
     return resolve_image_dir(config.paths.train_image_dir, first_image)
 
 
-def augmentation_summary() -> str:
+def augmentation_summary(config: ExperimentConfig) -> str:
     """返回写入实验日志的增强组合简述。"""
 
+    dropout = "no CoarseDropout"
+    if config.augment.coarse_dropout_enabled:
+        dropout = (
+            "CoarseDropout("
+            f"max_holes={config.augment.coarse_dropout_max_holes}, "
+            f"max_height={config.augment.coarse_dropout_max_height}, "
+            f"max_width={config.augment.coarse_dropout_max_width})"
+        )
     return (
         "LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + "
         "ColorJitter + RandomGamma + HueSaturationValue + CLAHE + "
-        "Blur/GaussNoise/ImageCompression + Strong CoarseDropout(max_holes=8, "
-        "max_size=64); "
+        f"Blur/GaussNoise/ImageCompression + {dropout}; "
         "valid/test: aspect-safe resize-pad + Normalize only"
     )
 
@@ -170,27 +227,37 @@ def append_experiment_log(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     if not log_path.exists():
         log_path.write_text("# Experiment Log\n\n", encoding="utf-8")
+    loss_description = "BCEWithLogitsLoss()"
+    if config.train.pos_weight_mode == "dynamic":
+        loss_description = "BCEWithLogitsLoss(pos_weight=fold_negative/fold_positive)"
     lines = [
         f"## {experiment_id}",
         "",
         f"- 时间: {completed_at}",
         f"- 实验名: `{config.experiment_name}`",
+        f"- Config: `{config.config_path}`",
         f"- Backbone: `{config.model.name}`",
-        f"- Pooling: `GeM(p_init={config.model.gem_p:.2f})`",
+        "- Pooling: `GAP (timm default)`",
         f"- 图像尺寸: `{config.data.image_size} x {config.data.image_size}`",
-        "- Loss: `BCEWithLogitsLoss(pos_weight=fold_negative/fold_positive)`",
-        f"- Optimizer: `{config.train.optimizer_name}`",
+        f"- Loss: `{loss_description}`",
+        f"- pos_weight_mode: `{config.train.pos_weight_mode}`",
+        f"- Label Smoothing: `{config.train.label_smoothing:.4f}`",
+        f"- EMA: `enabled={config.train.ema_enabled}, decay={config.train.ema_decay:.6f}`",
+        f"- Optimizer: `{config.train.optimizer_name}` with LLRD",
+        f"- LLRD: `head_lr={config.train.learning_rate:.2e}`, `backbone_lr={config.train.learning_rate * config.train.backbone_lr_factor:.2e}`",
         f"- Scheduler: `{config.train.scheduler_name}`",
-        f"- 数据增强: {augmentation_summary()}",
+        f"- 数据增强: {augmentation_summary(config)}",
         "",
-        "| Fold | Train Positive | Train Negative | pos_weight | Best Valid F1 |",
-        "| ---: | ---: | ---: | ---: | ---: |",
+        "| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for metrics in fold_metrics:
+        loss_weight = metrics.get("loss_pos_weight")
+        loss_weight_text = "plain_bce" if loss_weight is None else f"{loss_weight:.6f}"
         lines.append(
             f"| {int(metrics['fold'])} | {int(metrics['positive_count'])} | "
-            f"{int(metrics['negative_count'])} | {metrics['pos_weight']:.6f} | "
-            f"{metrics['f1']:.6f} |"
+            f"{int(metrics['negative_count'])} | {metrics['class_ratio']:.6f} | "
+            f"{loss_weight_text} | {metrics['f1']:.6f} |"
         )
     lines.extend(
         [
@@ -243,10 +310,17 @@ def run_training(config: ExperimentConfig) -> None:
         negative_count = int(len(train_frame) - positive_count)
         if positive_count == 0 or negative_count == 0:
             raise ValueError(f"Fold {fold} 训练集必须同时包含正负样本。")
-        pos_weight = negative_count / positive_count
+        class_ratio = negative_count / positive_count
+        loss_pos_weight = (
+            class_ratio if config.train.pos_weight_mode == "dynamic" else None
+        )
+        loss_weight_text = (
+            "plain_bce" if loss_pos_weight is None else f"{loss_pos_weight:.6f}"
+        )
         print(
             f"Fold {fold} 类别统计: positive={positive_count}, "
-            f"negative={negative_count}, pos_weight={pos_weight:.6f}"
+            f"negative={negative_count}, class_ratio={class_ratio:.6f}, "
+            f"loss_weight={loss_weight_text}"
         )
         train_dataset = BinaryImageDataset(
             train_frame,
@@ -285,16 +359,29 @@ def run_training(config: ExperimentConfig) -> None:
             pretrained_path=pretrained_path,
             require_pretrained=config.model.use_pretrained,
         ).to(device)
-        criterion = build_loss(pos_weight, device)
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=config.train.learning_rate,
-            weight_decay=config.train.weight_decay,
+        model_ema = None
+        if config.train.ema_enabled:
+            model_ema = ModelEmaV2(model, decay=config.train.ema_decay)
+            print(f"EMA 已启用: decay={config.train.ema_decay:.6f}")
+        criterion = build_loss(config.train, device, loss_pos_weight)
+        optimizer = build_optimizer(model, config)
+        warmup_epochs = max(1, config.train.epochs // 10)
+        cosine_epochs = config.train.epochs - warmup_epochs
+        
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, 
+            start_factor=0.01, 
+            total_iters=warmup_epochs
         )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
-            T_max=config.train.epochs,
+            T_max=cosine_epochs,
             eta_min=config.train.min_learning_rate,
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer, 
+            schedulers=[warmup_scheduler, cosine_scheduler], 
+            milestones=[warmup_epochs]
         )
         scaler = create_grad_scaler(device, config.train.amp)
         best_f1 = -1.0
@@ -314,9 +401,11 @@ def run_training(config: ExperimentConfig) -> None:
                 device=device,
                 epoch=epoch,
                 train_config=config.train,
+                model_ema=model_ema,
             )
+            eval_model = model_ema.module if model_ema is not None else model
             valid_loss, probabilities, targets = validate_one_epoch(
-                model,
+                eval_model,
                 valid_loader,
                 criterion,
                 device,
@@ -324,21 +413,31 @@ def run_training(config: ExperimentConfig) -> None:
                 description=f"Valid fold {fold + 1}",
             )
             metrics = find_optimal_threshold(targets, probabilities)
-            current_lr = float(optimizer.param_groups[0]["lr"])
+            lr_by_group = {
+                str(group.get("name", index)): float(group["lr"])
+                for index, group in enumerate(optimizer.param_groups)
+            }
             training_log.append(
                 {
                     "fold": fold,
                     "epoch": epoch + 1,
                     "positive_count": positive_count,
                     "negative_count": negative_count,
-                    "pos_weight": pos_weight,
+                    "class_ratio": class_ratio,
+                    "loss_pos_weight": loss_pos_weight,
+                    "label_smoothing": config.train.label_smoothing,
+                    "ema_enabled": config.train.ema_enabled,
+                    "ema_decay": config.train.ema_decay
+                    if config.train.ema_enabled
+                    else None,
                     "train_loss": train_loss,
                     "valid_loss": valid_loss,
                     "f1": metrics.f1,
                     "threshold": metrics.threshold,
                     "precision": metrics.precision,
                     "recall": metrics.recall,
-                    "learning_rate": current_lr,
+                    "head_learning_rate": lr_by_group["head"],
+                    "backbone_learning_rate": lr_by_group["backbone"],
                 }
             )
             pd.DataFrame(training_log).to_csv(
@@ -355,18 +454,29 @@ def run_training(config: ExperimentConfig) -> None:
                 best_probabilities = probabilities.copy()
                 best_metrics = metrics
                 bad_epochs = 0
+                save_model = model_ema.module if model_ema is not None else model
                 torch.save(
                     {
                         "state_dict": {
                             key: value.detach().cpu()
-                            for key, value in model.state_dict().items()
+                            for key, value in save_model.state_dict().items()
                         },
                         "fold": fold,
                         "model_name": config.model.name,
                         "image_size": config.data.image_size,
                         "positive_count": positive_count,
                         "negative_count": negative_count,
-                        "pos_weight": pos_weight,
+                        "class_ratio": class_ratio,
+                        "loss_pos_weight": loss_pos_weight,
+                        "pos_weight_mode": config.train.pos_weight_mode,
+                        "label_smoothing": config.train.label_smoothing,
+                        "ema_enabled": config.train.ema_enabled,
+                        "ema_decay": config.train.ema_decay
+                        if config.train.ema_enabled
+                        else None,
+                        "checkpoint_source": "ema"
+                        if model_ema is not None
+                        else "model",
                         "metrics": metrics.to_dict(),
                     },
                     checkpoint_path,
@@ -385,7 +495,8 @@ def run_training(config: ExperimentConfig) -> None:
                 "fold": fold,
                 "positive_count": positive_count,
                 "negative_count": negative_count,
-                "pos_weight": pos_weight,
+                "class_ratio": class_ratio,
+                "loss_pos_weight": loss_pos_weight,
                 **best_metrics.to_dict(),
             }
         )
@@ -426,6 +537,9 @@ def run_training(config: ExperimentConfig) -> None:
         "fold_metrics": fold_metrics,
         "oof_metrics": oof_metrics.to_dict(),
         "optimal_threshold_file": str(threshold_path),
+        "ema_enabled": config.train.ema_enabled,
+        "ema_decay": config.train.ema_decay if config.train.ema_enabled else None,
+        "checkpoint_source": "ema" if config.train.ema_enabled else "model",
         "config": config.to_dict(),
     }
     save_json(metadata, config.checkpoint_dir / "metadata.json")
@@ -446,7 +560,8 @@ def run_training(config: ExperimentConfig) -> None:
 
 
 def main() -> None:
-    config = apply_cli_overrides(load_config(), parse_args())
+    args = parse_args()
+    config = apply_cli_overrides(load_config(args.config), args)
     save_json(config.to_dict(), config.experiment_output_dir / "config.json")
     run_training(config)
 
