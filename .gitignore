@@ -1,15 +1,38 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
 
 # Virtual environments
-.venv
+.venv/
+venv/
+env/
 
+# Local datasets and generated artifacts
 data/
+preData/
 outputs/
-weights/
-docs/
+
+# Local weights and checkpoints
+weights/*.pth
+weights/*.pt
+weights/*.onnx
+weights/checkpoints/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

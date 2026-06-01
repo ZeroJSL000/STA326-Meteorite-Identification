@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -12,9 +13,11 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.model_selection import StratifiedKFold
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from timm.utils import ModelEmaV2
 
+from sampler import create_weighted_sampler
+from utils.checkpoint import load_weights_flexible
 from utils.config import ExperimentConfig, load_config, resolve_image_dir
 from utils.dataset import BinaryImageDataset, build_train_transforms, build_valid_transforms
 from utils.engine import build_loss, train_one_epoch, validate_one_epoch
@@ -82,6 +85,7 @@ def build_loader(
     shuffle: bool,
     config: ExperimentConfig,
     device: torch.device,
+    sampler: WeightedRandomSampler | None = None,
 ) -> DataLoader:
     """统一训练与验证的数据加载性能配置。"""
 
@@ -90,7 +94,8 @@ def build_loader(
     kwargs: dict[str, object] = {
         "dataset": dataset,
         "batch_size": batch_size,
-        "shuffle": shuffle,
+        "shuffle": shuffle and sampler is None,
+        "sampler": sampler,
         "num_workers": config.data.num_workers,
         "pin_memory": device.type == "cuda",
         "drop_last": shuffle and len(dataset) >= batch_size,
@@ -103,12 +108,16 @@ def build_loader(
     return DataLoader(**kwargs)
 
 
-def create_grad_scaler(device: torch.device, amp: bool) -> torch.amp.GradScaler:
+def create_grad_scaler(
+    device: torch.device,
+    amp: bool,
+    amp_dtype: str,
+) -> torch.amp.GradScaler:
     """创建只在 CUDA 训练时启用的混合精度 scaler。"""
 
     return torch.amp.GradScaler(
         "cuda",
-        enabled=amp and device.type == "cuda",
+        enabled=amp and amp_dtype == "float16" and device.type == "cuda",
     )
 
 
@@ -213,6 +222,21 @@ def augmentation_summary(config: ExperimentConfig) -> str:
     )
 
 
+def validate_multiscale_train_sizes(config: ExperimentConfig) -> tuple[int, ...]:
+    """校验多尺度训练尺寸与模型 patch size 的整除关系。"""
+
+    if not config.augment.multiscale_train_enabled:
+        return ()
+    invalid_sizes = [
+        size
+        for size in config.augment.multiscale_train_sizes
+        if size <= 0 or size % config.model.patch_size != 0
+    ]
+    if invalid_sizes:
+        raise ValueError(f"多尺度尺寸必须为正数且能被 patch size 整除: {invalid_sizes}")
+    return config.augment.multiscale_train_sizes
+
+
 def append_experiment_log(
     config: ExperimentConfig,
     experiment_id: str,
@@ -230,6 +254,11 @@ def append_experiment_log(
     loss_description = "BCEWithLogitsLoss()"
     if config.train.pos_weight_mode == "dynamic":
         loss_description = "BCEWithLogitsLoss(pos_weight=fold_negative/fold_positive)"
+    if config.train.loss_type == "focal":
+        loss_description = (
+            f"FocalLoss(gamma={config.train.focal_gamma:.4f}, "
+            f"alpha={config.train.focal_alpha:.4f})"
+        )
     lines = [
         f"## {experiment_id}",
         "",
@@ -242,6 +271,8 @@ def append_experiment_log(
         f"- Loss: `{loss_description}`",
         f"- pos_weight_mode: `{config.train.pos_weight_mode}`",
         f"- Label Smoothing: `{config.train.label_smoothing:.4f}`",
+        f"- Logit Adjustment: `{config.train.use_logit_adjustment}`",
+        f"- Train Positive Prior: `{config.train.train_pos_prior:.6f}`",
         f"- EMA: `enabled={config.train.ema_enabled}, decay={config.train.ema_decay:.6f}`",
         f"- Optimizer: `{config.train.optimizer_name}` with LLRD",
         f"- LLRD: `head_lr={config.train.learning_rate:.2e}`, `backbone_lr={config.train.learning_rate * config.train.backbone_lr_factor:.2e}`",
@@ -275,15 +306,85 @@ def append_experiment_log(
         file.write("\n".join(lines))
 
 
+def apply_pseudo_training_schedule(config: ExperimentConfig) -> None:
+    """伪标签重训练时按配置缩小学习率和训练轮数。"""
+
+    if not config.pseudo_labeling.enabled:
+        return
+    config.train.learning_rate *= config.pseudo_labeling.pseudo_lr_factor
+    config.train.epochs = max(
+        1,
+        int(round(config.train.epochs * config.pseudo_labeling.pseudo_epoch_factor)),
+    )
+    print(
+        "伪标签训练日程已启用: "
+        f"lr={config.train.learning_rate:.3e}; epochs={config.train.epochs}"
+    )
+
+
+def load_pseudo_training_frame(config: ExperimentConfig) -> pd.DataFrame | None:
+    """读取严格筛选后的伪标签，并映射到掩码测试图目录。"""
+
+    if not config.pseudo_labeling.enabled:
+        return None
+    path = config.paths.pseudo_labels_csv
+    if not path.is_file():
+        raise FileNotFoundError(f"找不到伪标签文件: {path}")
+    frame = pd.read_csv(path)
+    id_col = "image_name" if "image_name" in frame else config.data.id_col
+    required_columns = {id_col, config.data.label_col, "is_pseudo"}
+    missing_columns = required_columns - set(frame.columns)
+    if missing_columns:
+        raise KeyError(f"伪标签 CSV 缺少列: {sorted(missing_columns)}")
+    if frame.empty:
+        raise ValueError("伪标签 CSV 为空，无法启动伪标签训练。")
+    frame = frame.rename(columns={id_col: config.data.id_col}).copy()
+    frame[config.data.id_col] = frame[config.data.id_col].astype(str)
+    frame[config.data.label_col] = frame[config.data.label_col].astype(int)
+    if not set(frame[config.data.label_col].unique()).issubset({0, 1}):
+        raise ValueError("伪标签必须为 0/1。")
+    first_image = str(frame.iloc[0][config.data.id_col])
+    test_image_dir = resolve_image_dir(config.paths.test_image_dir, first_image)
+    frame["image_dir"] = str(test_image_dir)
+    frame["sample_weight"] = config.pseudo_labeling.pseudo_sample_weight
+    frame["is_pseudo"] = 1
+    frame["use_soft_masking"] = False
+    print(f"载入伪标签: {len(frame)} 行; 测试图目录={test_image_dir}")
+    return frame
+
+
 def run_training(config: ExperimentConfig) -> None:
     """训练全部折，保存 OOF、最优阈值、折模型和实验日志。"""
 
+    apply_pseudo_training_schedule(config)
     seed_everything(config.train.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     frame = pd.read_csv(config.paths.train_csv)
     train_image_dir = validate_inputs(config, frame)
+    pseudo_frame = load_pseudo_training_frame(config)
+    original_image_dir: Path | None = None
+    if config.preprocessing.soft_masking_enabled:
+        first_image = str(frame.iloc[0][config.data.id_col])
+        try:
+            original_image_dir = resolve_image_dir(
+                config.paths.original_image_dir,
+                first_image,
+            )
+        except FileNotFoundError as error:
+            warnings.warn(
+                f"Soft-Masking 原图目录不可用；回退到纯掩码图。详情: {error}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
     print(f"设备: {device}; 训练图像目录: {train_image_dir}")
+    if original_image_dir is not None:
+        print(
+            "Soft-Masking 已启用: "
+            f"原图目录={original_image_dir}; "
+            f"mask_alpha={config.preprocessing.soft_masking_alpha:.3f}"
+        )
     print(f"实验: {config.experiment_name}; 模型: {config.model.name}")
+    multiscale_train_sizes = validate_multiscale_train_sizes(config)
 
     splitter = StratifiedKFold(
         n_splits=config.train.folds,
@@ -300,10 +401,23 @@ def run_training(config: ExperimentConfig) -> None:
     training_log: list[dict[str, float | int]] = []
     fold_metrics: list[dict[str, float | int]] = []
     checkpoint_files: list[str] = []
+    fold_count = config.train.fold_limit or config.train.folds
+    if not 0 < fold_count <= config.train.folds:
+        raise ValueError("train.fold_limit 必须在 (0, train.folds] 范围内。")
+    if fold_count != config.train.folds:
+        print(f"调试模式: 仅训练前 {fold_count}/{config.train.folds} 个 fold。")
 
-    for fold in range(config.train.folds):
+    for fold in range(fold_count):
         print(f"\n===== Fold {fold + 1}/{config.train.folds} =====")
-        train_frame = frame[frame["fold"] != fold].reset_index(drop=True)
+        real_train_frame = frame[frame["fold"] != fold].reset_index(drop=True)
+        train_frame = real_train_frame
+        if pseudo_frame is not None:
+            real_train_frame = real_train_frame.copy()
+            real_train_frame["image_dir"] = str(train_image_dir)
+            real_train_frame["sample_weight"] = 1.0
+            real_train_frame["is_pseudo"] = 0
+            real_train_frame["use_soft_masking"] = True
+            train_frame = pd.concat([real_train_frame, pseudo_frame], ignore_index=True, sort=False)
         valid_frame = frame[frame["fold"] == fold].reset_index(drop=True)
         valid_indices = frame.index[frame["fold"] == fold].to_numpy()
         positive_count = int(train_frame[config.data.label_col].sum())
@@ -328,6 +442,9 @@ def run_training(config: ExperimentConfig) -> None:
             build_train_transforms(config.data.image_size, config.augment),
             config.data.id_col,
             config.data.label_col,
+            soft_masking_enabled=config.preprocessing.soft_masking_enabled,
+            soft_masking_alpha=config.preprocessing.soft_masking_alpha,
+            original_image_dir=original_image_dir,
         )
         valid_dataset = BinaryImageDataset(
             valid_frame,
@@ -335,13 +452,42 @@ def run_training(config: ExperimentConfig) -> None:
             build_valid_transforms(config.data.image_size),
             config.data.id_col,
             config.data.label_col,
+            soft_masking_enabled=config.preprocessing.soft_masking_enabled,
+            soft_masking_alpha=config.preprocessing.soft_masking_alpha,
+            original_image_dir=original_image_dir,
         )
+        train_sampler: WeightedRandomSampler | None = None
+        sampling_weights = np.ones(len(train_frame), dtype=np.float64)
+        if config.train.hard_mining_enabled:
+            oof_path = (
+                config.train.hard_mining_oof_path
+                or config.experiment_output_dir / "oof_predictions.csv"
+            )
+            hard_mining_sampler = create_weighted_sampler(
+                oof_path,
+                topk=config.train.hard_mining_topk,
+                boost=config.train.hard_mining_boost,
+                sample_ids=real_train_frame[config.data.id_col].astype(str).tolist(),
+                id_col=config.data.id_col,
+                label_col=config.data.label_col,
+            )
+            sampling_weights[: len(real_train_frame)] *= hard_mining_sampler.weights.numpy()
+            print(f"Fold {fold} 困难样本重采样已启用: OOF={oof_path}")
+        if pseudo_frame is not None:
+            sampling_weights *= train_frame["sample_weight"].to_numpy(dtype=np.float64)
+        if config.train.hard_mining_enabled or pseudo_frame is not None:
+            train_sampler = WeightedRandomSampler(
+                weights=torch.as_tensor(sampling_weights, dtype=torch.double),
+                num_samples=len(train_frame),
+                replacement=True,
+            )
         train_loader = build_loader(
             train_dataset,
             config.train.batch_size,
             True,
             config,
             device,
+            sampler=train_sampler,
         )
         valid_loader = build_loader(
             valid_dataset,
@@ -359,6 +505,15 @@ def run_training(config: ExperimentConfig) -> None:
             pretrained_path=pretrained_path,
             require_pretrained=config.model.use_pretrained,
         ).to(device)
+        if pseudo_frame is not None and config.pseudo_labeling.init_checkpoint_dir is not None:
+            init_checkpoint = config.pseudo_labeling.init_checkpoint_dir / f"fold_{fold}_best.pth"
+            if not init_checkpoint.is_file():
+                raise FileNotFoundError(f"找不到伪标签微调初始化 checkpoint: {init_checkpoint}")
+            loaded_count, skipped = load_weights_flexible(model, init_checkpoint)
+            print(
+                "伪标签微调初始化完成: "
+                f"loaded={loaded_count}; skipped={len(skipped)}; checkpoint={init_checkpoint}"
+            )
         model_ema = None
         if config.train.ema_enabled:
             model_ema = ModelEmaV2(model, decay=config.train.ema_decay)
@@ -366,24 +521,32 @@ def run_training(config: ExperimentConfig) -> None:
         criterion = build_loss(config.train, device, loss_pos_weight)
         optimizer = build_optimizer(model, config)
         warmup_epochs = max(1, config.train.epochs // 10)
-        cosine_epochs = config.train.epochs - warmup_epochs
-        
-        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-            optimizer, 
-            start_factor=0.01, 
-            total_iters=warmup_epochs
-        )
-        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=cosine_epochs,
-            eta_min=config.train.min_learning_rate,
-        )
-        scheduler = torch.optim.lr_scheduler.SequentialLR(
-            optimizer, 
-            schedulers=[warmup_scheduler, cosine_scheduler], 
-            milestones=[warmup_epochs]
-        )
-        scaler = create_grad_scaler(device, config.train.amp)
+        if config.train.epochs == 1:
+            scheduler: torch.optim.lr_scheduler.LRScheduler = (
+                torch.optim.lr_scheduler.LinearLR(
+                    optimizer,
+                    start_factor=0.01,
+                    total_iters=warmup_epochs,
+                )
+            )
+        else:
+            cosine_epochs = config.train.epochs - warmup_epochs
+            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=0.01,
+                total_iters=warmup_epochs,
+            )
+            cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=cosine_epochs,
+                eta_min=config.train.min_learning_rate,
+            )
+            scheduler = torch.optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup_scheduler, cosine_scheduler],
+                milestones=[warmup_epochs],
+            )
+        scaler = create_grad_scaler(device, config.train.amp, config.train.amp_dtype)
         best_f1 = -1.0
         best_probabilities: np.ndarray | None = None
         best_metrics: BinaryMetrics | None = None
@@ -392,6 +555,21 @@ def run_training(config: ExperimentConfig) -> None:
         checkpoint_files.append(checkpoint_path.name)
 
         for epoch in range(config.train.epochs):
+            if multiscale_train_sizes:
+                epoch_image_size = random.choice(multiscale_train_sizes)
+                train_dataset.transform = build_train_transforms(
+                    epoch_image_size,
+                    config.augment,
+                )
+                train_loader = build_loader(
+                    train_dataset,
+                    config.train.batch_size,
+                    True,
+                    config,
+                    device,
+                    sampler=train_sampler,
+                )
+                print(f"Fold {fold} Epoch {epoch + 1}: train_image_size={epoch_image_size}")
             train_loss = train_one_epoch(
                 model=model,
                 loader=train_loader,
@@ -402,6 +580,7 @@ def run_training(config: ExperimentConfig) -> None:
                 epoch=epoch,
                 train_config=config.train,
                 model_ema=model_ema,
+                augment_config=config.augment,
             )
             eval_model = model_ema.module if model_ema is not None else model
             valid_loss, probabilities, targets = validate_one_epoch(
@@ -411,6 +590,8 @@ def run_training(config: ExperimentConfig) -> None:
                 device,
                 config.train.amp,
                 description=f"Valid fold {fold + 1}",
+                inference_config=config.inference,
+                amp_dtype=config.train.amp_dtype,
             )
             metrics = find_optimal_threshold(targets, probabilities)
             lr_by_group = {
@@ -501,9 +682,13 @@ def run_training(config: ExperimentConfig) -> None:
             }
         )
 
-    oof_frame = frame[[config.data.id_col, config.data.label_col, "fold"]].copy()
-    oof_frame["probability"] = oof_probabilities
-    oof_metrics = find_optimal_threshold(labels, oof_probabilities)
+    completed_mask = (frame["fold"] < fold_count).to_numpy()
+    completed_probabilities = oof_probabilities[completed_mask]
+    completed_labels = labels[completed_mask]
+    oof_frame = frame.loc[completed_mask, [config.data.id_col, config.data.label_col, "fold"]].copy()
+    oof_frame["probability"] = completed_probabilities
+    oof_frame["prob"] = completed_probabilities
+    oof_metrics = find_optimal_threshold(completed_labels, completed_probabilities)
     oof_frame["prediction"] = (
         oof_frame["probability"] >= oof_metrics.threshold
     ).astype(int)
@@ -532,7 +717,8 @@ def run_training(config: ExperimentConfig) -> None:
         "experiment_name": config.experiment_name,
         "model_name": config.model.name,
         "image_size": config.data.image_size,
-        "folds": config.train.folds,
+        "folds": fold_count,
+        "validation_folds": config.train.folds,
         "checkpoint_files": checkpoint_files,
         "fold_metrics": fold_metrics,
         "oof_metrics": oof_metrics.to_dict(),

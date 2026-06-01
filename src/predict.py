@@ -104,6 +104,12 @@ def run_prediction(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     probability_sum = np.zeros(len(sample_submission), dtype=np.float64)
     print(f"设备: {device}; 测试图像目录: {test_image_dir}; OOF 阈值: {threshold:.2f}")
+    if config.inference.tta_enabled:
+        view_count = len(config.inference.tta_scales) * len(config.inference.tta_flips)
+        print(
+            f"TTA 已启用: scales={config.inference.tta_scales}; "
+            f"flips={config.inference.tta_flips}; views={view_count}"
+        )
 
     loader = build_test_loader(sample_submission, test_image_dir, config, device)
     for filename in checkpoint_files:
@@ -119,6 +125,8 @@ def run_prediction(
             device,
             config.train.amp,
             description=filename,
+            inference_config=config.inference,
+            amp_dtype=config.train.amp_dtype,
         )
         del model
         if device.type == "cuda":
@@ -129,6 +137,7 @@ def run_prediction(
     submission[config.data.label_col] = (probabilities >= threshold).astype(int)
     probability_frame = submission[[config.data.id_col]].copy()
     probability_frame["probability"] = probabilities
+    probability_frame["prob"] = probabilities
     probability_frame["prediction"] = submission[config.data.label_col]
     submission_path = config.experiment_output_dir / "submission.csv"
     probability_path = config.experiment_output_dir / "submission_probabilities.csv"
