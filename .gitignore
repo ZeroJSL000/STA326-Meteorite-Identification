@@ -1,0 +1,16 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Generated experiment artifacts.
+outputs/
+docs/
+
+# Large local assets. Keep these files in the workspace, but do not push them to GitHub.
+data/*
+!data/pseudo_labels/
+data/pseudo_labels/*
+!data/pseudo_labels/api_prediction.csv
+weights/
+*.zip

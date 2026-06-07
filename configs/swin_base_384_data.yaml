@@ -1,6 +1,6 @@
-experiment_name: "swin_base_384_final_hard_answer"
+experiment_name: "swin_base_384_data"
 paths:
-  data_dir: "data_final_hard_answer"
+  data_dir: "data"
 model:
   backbone: "swin_base_patch4_window12_384.ms_in22k_ft_in1k"
   image_size: 384

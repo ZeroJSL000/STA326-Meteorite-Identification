@@ -1,120 +1,146 @@
-# 图像二分类 ConvNeXtV2 Baseline
+# STA326 Meteorite Identification
 
-当前管线严格复现历史最佳方向：`convnextv2_base.fcmae_ft_in22k_in1k`、
-`384 x 384`、默认 GAP 池化、单 logit 分类头、动态加权
-`BCEWithLogitsLoss`、`AdamW` 与 `CosineAnnealingLR`。验证和测试图像
-只执行保持比例的缩放及零填充，不会将石头主体强行拉伸。
+This repository contains our STA326 meteorite image classification pipeline. The task is formulated as binary image classification: given a test image, predict whether it belongs to the meteorite class.
 
-## 环境安装
+The final reproducible inference pipeline uses a 5-fold SwinV2 ensemble. For each test image, the five fold checkpoints produce probabilities that are averaged, then the final submission is calibrated by selecting the top 86 images with the highest predicted probabilities as positive.
 
-项目使用 Python `3.14+` 与 `uv`：
-
-```bash
-uv add torch torchvision timm pandas numpy scikit-learn albumentations tqdm pillow
-```
-
-## 下载离线预训练权重
-
-训练代码仅从 `weights/` 读取初始化权重。首次在联网环境执行：
-
-```bash
-mkdir -p weights
-uv run python - <<'PY'
-from pathlib import Path
-
-import timm
-import torch
-
-model_name = "convnextv2_base.fcmae_ft_in22k_in1k"
-output_path = Path("weights") / f"{model_name}.pth"
-model = timm.create_model(model_name, pretrained=True)
-torch.save(model.state_dict(), output_path)
-print(f"saved pretrained weights to: {output_path}")
-PY
-```
-
-## 预处理与增强
-
-验证和推理使用固定流程：
+## Repository Structure
 
 ```text
-LongestMaxSize(max_size=384)
-PadIfNeeded(min_height=384, min_width=384, border_mode=BORDER_CONSTANT, fill=0)
-Normalize()
+configs/                         Experiment YAML files
+scripts/run_prediction.sh        Inference entry point
+scripts/run_experiment.sh        Training + inference entry point
+src/
+├── train.py                     K-fold training
+├── predict.py                   5-fold ensemble inference
+├── models/                      Model construction
+└── utils/                       Config, dataset, metrics, checkpoint helpers
 ```
 
-训练在该 aspect-safe 基础上加入 `ColorJitter`、`RandomGamma`、
-`HueSaturationValue`、`CLAHE`、`ShiftScaleRotate`、轻度模糊/噪声/JPEG
-压缩，以及由 YAML 控制的 `CoarseDropout`。
+Large image data and checkpoint files are intentionally not tracked by Git. 
 
-## 执行实验
-
-```bash
-chmod +x scripts/run_experiment.sh
-./scripts/run_experiment.sh
-```
-
-当前实验升级为 YAML 配置驱动，默认读取 `configs/convnextv2_base_384_ema_smooth.yaml`：
+After preparing the competition data and model checkpoints, the working tree should also contain:
 
 ```text
-pos_weight = disabled (plain BCE)
-label_smoothing = 0.05
-EMA = enabled(decay=0.999)
-pooling = GAP (timm default)
-head_lr = 5e-4
-backbone_lr = 5e-5
-CoarseDropout = tuned(max_holes=4, max_size=48)
-OOF threshold search range = [0.10, 0.90], step=0.01
+data/
+├── train_labels.csv
+├── sample_submission.csv
+├── train_images/train_images/
+└── test_images/test_images/
+
+weights/
+└── checkpoints/
+    ├── swinv2_base_384_minimal_pseudo/
+    │   ├── fold_0_best.pth
+    │   ├── fold_1_best.pth
+    │   ├── fold_2_best.pth
+    │   ├── fold_3_best.pth
+    │   ├── fold_4_best.pth
+    │   └── metadata.json
+    └── swinv2_base_384_minimal_external/
+        ├── fold_0_best.pth
+        ├── fold_1_best.pth
+        ├── fold_2_best.pth
+        ├── fold_3_best.pth
+        ├── fold_4_best.pth
+        └── metadata.json
 ```
 
-推荐通过复制并修改 `configs/*.yaml` 管理新实验，例如：
-`bash scripts/run_experiment.sh configs/convnextv2_base_384_ema_smooth.yaml`。
-默认输出位于 `outputs/convnextv2_base_384_ema_smooth/`，模型
-checkpoint 位于 `weights/checkpoints/convnextv2_base_384_ema_smooth/`。
-每次完整训练结束后，
-`src/train.py` 会自动向 `docs/experiment_log.md` 追加配置、各折 F1 和
-OOF 阈值；提交线上分数后，在对应实验条目补充 LB Score 与结论。
 
+## Environment
 
-## SwinV2 minimal + 0.81818 强基线融合
-
-新增配置：`configs/swinv2_base_384_minimal_external_081818.yaml`。它使用本地
-timm 1.0.27 可用的较新 SwinV2：
-`swinv2_base_window12to24_192to384.ms_in22k_ft_in1k`。训练阶段设置
-`augmentation.mode: minimal`，只保留模型训练必须的 resize/pad、Normalize 和
-ToTensor，不再做颜色、几何、压缩、CLAHE 或 CoarseDropout 增强。
-
-首次使用 SwinV2 前需要准备离线权重：
+The project uses `uv` for dependency management. From the repository root:
 
 ```bash
-uv run python - <<'PY'
-from pathlib import Path
-
-import timm
-import torch
-
-model_name = "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k"
-output_path = Path("weights") / f"{model_name}.pth"
-model = timm.create_model(model_name, pretrained=True)
-torch.save(model.state_dict(), output_path)
-print(f"saved pretrained weights to: {output_path}")
-PY
+uv sync --frozen
 ```
 
-运行：
+The project metadata currently requires Python 3.14 or newer.
 
-```bash
-bash scripts/run_experiment.sh configs/swinv2_base_384_minimal_external_081818.yaml
-```
+## Data Preparation
 
-推理会读取项目根目录的 `0.81818.csv`。默认策略为 `guarded`：以该 CSV
-作为 0.81818 F1 的强基线，只在 SwinV2 与它不一致且 SwinV2 概率距离 OOF
-阈值至少 `external_override_margin` 时替换标签。输出包括：
+Place the competition data under `data/`:
 
 ```text
-submission_model_only.csv          # SwinV2 单模型结果
-submission_external_baseline.csv   # 对齐后的 0.81818 强基线
-submission_external_guarded.csv    # guarded 融合候选
-external_disagreements.csv         # 两者不一致样本，按模型置信度排序
-submission.csv                     # 当前配置选定的最终提交
+data/train_labels.csv
+data/sample_submission.csv
+data/train_images/train_images/<image files>
+data/test_images/test_images/<image files>
 ```
+
+## Checkpoint Preparation
+
+The trained checkpoints are large and are provided with the project report. After obtaining the checkpoint archives, place the files as follows:
+
+```bash
+mkdir -p weights/checkpoints/swinv2_base_384_minimal_pseudo
+unzip -o swinv2_base_384_minimal_pseudo.zip \
+  -d weights/checkpoints/swinv2_base_384_minimal_pseudo
+```
+
+The directory used by this code should be:
+
+```text
+weights/checkpoints/swinv2_base_384_minimal_external/
+```
+
+Each checkpoint directory must contain `fold_0_best.pth` through `fold_4_best.pth` and `metadata.json`.
+
+## Reproduce Final Inference
+
+The default inference command reproduces the final SwinV2 pseudo-label checkpoint submission:
+
+```bash
+bash scripts/run_prediction.sh
+```
+
+This is equivalent to:
+
+```bash
+uv run python src/predict.py \
+  --config configs/swinv2_base_384_minimal_pseudo.yaml
+```
+
+The output files are written to:
+
+```text
+outputs/swinv2_base_384_minimal_pseudo/
+├── submission_model_only.csv
+├── submission_probabilities.csv
+├── submission_count_calibrated.csv
+└── submission.csv
+```
+
+`submission_model_only.csv` is the raw 5-fold ensemble prediction using the OOF threshold stored in checkpoint metadata. `submission.csv` is the final Top-86-calibrated submission.
+
+## Training
+
+To rerun training and then inference with the default final configuration:
+
+```bash
+bash scripts/run_experiment.sh configs/swinv2_base_384_minimal_pseudo.yaml
+```
+
+Training uses:
+
+- Backbone: `swinv2_base_window12to24_192to384.ms_in22k_ft_in1k`
+- Image size: `384 x 384`
+- 5-fold cross validation
+- EMA checkpoint saving
+- Minimal aspect-safe preprocessing
+- Optional pseudo-label training from `data/pseudo_labels/api_prediction.csv`
+
+To train with pretrained initialization, place the offline timm backbone state dict at:
+
+```text
+weights/swinv2_base_window12to24_192to384.ms_in22k_ft_in1k.pth
+```
+
+By default, the training script loads pretrained weights from this local path instead of downloading them at runtime. To train without pretrained initialization, pass `--no-pretrained` directly to `src/train.py`.
+
+## Key Configurations
+
+- `configs/swinv2_base_384_minimal_pseudo.yaml`: final default configuration
+- `configs/swinv2_base_384_minimal_external.yaml`: auxiliary SwinV2 configuration
+- `configs/convnextv2_base_384_data.yaml` and `configs/swin_base_384_data.yaml`: earlier baseline configurations
+

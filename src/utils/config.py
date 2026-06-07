@@ -176,11 +176,6 @@ class InferenceConfig:
     threshold: float = field(
         default_factory=lambda: _env_float("FALLBACK_THRESHOLD", 0.5)
     )
-    external_label_csv: Path | None = None
-    external_label_score: float | None = None
-    external_strategy: str = "none"
-    external_blend_weight: float = 0.70
-    external_override_margin: float = 0.30
     target_positive_count: int | None = None
 
 
@@ -373,27 +368,9 @@ def _apply_yaml(config: ExperimentConfig, payload: dict[str, Any], path: Path) -
         config.inference.batch_size = int(inference["batch_size"])
     if "threshold" in inference:
         config.inference.threshold = float(inference["threshold"])
-    if "external_label_csv" in inference:
-        config.inference.external_label_csv = _as_path(inference["external_label_csv"])
-    if "external_label_score" in inference:
-        config.inference.external_label_score = float(inference["external_label_score"])
-    if "external_strategy" in inference:
-        config.inference.external_strategy = str(inference["external_strategy"]).lower()
-    if "external_blend_weight" in inference:
-        config.inference.external_blend_weight = float(inference["external_blend_weight"])
-    if "external_override_margin" in inference:
-        config.inference.external_override_margin = float(
-            inference["external_override_margin"]
-        )
     if "target_positive_count" in inference:
         value = inference["target_positive_count"]
         config.inference.target_positive_count = None if value is None else int(value)
-    if config.inference.external_strategy not in {"none", "blend", "guarded"}:
-        raise ValueError("inference.external_strategy 仅支持 none、blend 或 guarded。")
-    if not 0.0 <= config.inference.external_blend_weight <= 1.0:
-        raise ValueError("inference.external_blend_weight 必须在 [0, 1] 范围内。")
-    if not 0.0 <= config.inference.external_override_margin <= 1.0:
-        raise ValueError("inference.external_override_margin 必须在 [0, 1] 范围内。")
     if config.inference.target_positive_count is not None and config.inference.target_positive_count < 0:
         raise ValueError("inference.target_positive_count 必须非负。")
 
