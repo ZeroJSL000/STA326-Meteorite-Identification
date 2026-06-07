@@ -1,22 +1,38 @@
 [project]
-name = "stage2"
-version = "0.1.0"
-description = "Add your description here"
+name = "sta326-meteorite-final"
+version = "1.0.0"
+description = "Reproducible SwinV2 five-fold meteorite classifier without guarded fusion"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 dependencies = [
     "albumentations>=2.0.8",
-    "einops>=0.8.2",
-    "numpy>=2.4.6",
-    "nvidia-cudnn-cu12>=9.23.0.39",
-    "pandas>=3.0.3",
-    "pillow>=12.2.0",
-    "pyyaml>=6.0.3",
-    "rembg[gpu]>=2.0.75",
-    "scikit-learn>=1.8.0",
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "pillow>=10.0",
     "timm>=1.0.27",
-    "torch>=2.12.0",
-    "torchvision>=0.27.0",
-    "tqdm>=4.67.3",
-    "ultralytics>=8.4.57",
+    "torch>=2.5",
+    "tqdm>=4.67",
 ]
+
+[project.scripts]
+meteorite-final = "meteorite_final.cli:main"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.11"]

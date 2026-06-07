@@ -1,0 +1,16 @@
+{
+  "experiment_id": "EXP-20260602-113451-swinv2_base_384_minimal_pseudo0818",
+  "experiment_name": "swinv2_base_384_minimal_pseudo0818",
+  "model_name": "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k",
+  "image_size": 384,
+  "folds": 5,
+  "checkpoint_source": "ema",
+  "pseudo_label_enabled": true,
+  "checkpoint_files": [
+    "fold_0_best.pth",
+    "fold_1_best.pth",
+    "fold_2_best.pth",
+    "fold_3_best.pth",
+    "fold_4_best.pth"
+  ]
+}

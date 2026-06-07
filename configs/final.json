@@ -1,0 +1,12 @@
+{
+  "model_name": "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k",
+  "image_size": 384,
+  "batch_size": 32,
+  "num_workers": 8,
+  "amp": true,
+  "amp_dtype": "bfloat16",
+  "top_k": 86,
+  "seed": 2026,
+  "id_column": "id",
+  "label_column": "label"
+}

@@ -1,0 +1,14 @@
+{
+  "strategy": "pure_model_fold_average_then_top_k",
+  "guarded_fusion": false,
+  "external_labels_used_at_inference": false,
+  "checkpoints_trained_with_pseudo_labels": true,
+  "model_name": "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k",
+  "image_size": 384,
+  "batch_size": 32,
+  "amp_dtype": "bfloat16",
+  "seed": 2026,
+  "top_k": 86,
+  "top_k_threshold": 0.5249254107475281,
+  "test_rows": 194
+}

@@ -1,38 +1,21 @@
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-dist/
-wheels/
 *.egg-info/
+*.py[cod]
+.venv/
 .ruff_cache/
 .pytest_cache/
-.mypy_cache/
 
-# Virtual environments
-.venv/
-venv/
-env/
+# Runtime artifacts
+results/*
+!results/reference/
+release/
+tmp/
+api_prediction.csv
 
-# Local datasets and generated artifacts
-data/
-preData/
-outputs/
+# Model checkpoints exceed GitHub's regular Git file-size limit.
+weights/checkpoints/final/*.pth
 
-# Local weights and checkpoints
-weights/*.pth
-weights/*.pt
-weights/*.onnx
-weights/checkpoints/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-
-# OS
-.DS_Store
-Thumbs.db
+# Local overrides
+.env
+*.local.json
