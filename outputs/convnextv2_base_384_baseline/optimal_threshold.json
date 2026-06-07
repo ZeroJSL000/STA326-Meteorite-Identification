@@ -1,0 +1,17 @@
+{
+  "experiment_id": "EXP-20260527-023149-convnextv2_base_384_baseline",
+  "experiment_name": "convnextv2_base_384_baseline",
+  "source": "out_of_fold_predictions",
+  "metric": "f1_score",
+  "search_min": 0.1,
+  "search_max": 0.9,
+  "search_step": 0.01,
+  "optimal_threshold": 0.12,
+  "oof_metrics": {
+    "f1": 0.9913011290024061,
+    "precision": 0.9852832965415746,
+    "recall": 0.9973929236499068,
+    "threshold": 0.12,
+    "positive_predictions": 2718
+  }
+}

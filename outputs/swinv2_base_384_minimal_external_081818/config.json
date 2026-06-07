@@ -1,0 +1,74 @@
+{
+  "experiment_name": "swinv2_base_384_minimal_external_081818",
+  "config_path": "/Work/project/STA326new/configs/swinv2_base_384_minimal_external_081818.yaml",
+  "paths": {
+    "data_dir": "/Work/project/STA326new/data_final_hard_answer",
+    "weights_dir": "/Work/project/STA326new/weights",
+    "outputs_dir": "/Work/project/STA326new/outputs",
+    "docs_dir": "/Work/project/STA326new/docs",
+    "train_image_dir": "/Work/project/STA326new/data_final_hard_answer/train_images",
+    "test_image_dir": "/Work/project/STA326new/data_final_hard_answer/test_images",
+    "train_csv": "/Work/project/STA326new/data_final_hard_answer/train_labels.csv",
+    "sample_submission_csv": "/Work/project/STA326new/data_final_hard_answer/sample_submission.csv"
+  },
+  "data": {
+    "id_col": "id",
+    "label_col": "label",
+    "image_size": 384,
+    "num_workers": 8
+  },
+  "model": {
+    "name": "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k",
+    "pooling": "gap",
+    "drop_rate": 0.0,
+    "drop_path_rate": 0.0,
+    "use_pretrained": true,
+    "pretrained_file": "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k.pth"
+  },
+  "augment": {
+    "mode": "minimal",
+    "color_jitter": 0.45,
+    "clahe_probability": 0.6,
+    "geometry_probability": 0.5,
+    "degradation_probability": 0.35,
+    "coarse_dropout_enabled": true,
+    "coarse_dropout_probability": 0.45,
+    "coarse_dropout_max_holes": 8,
+    "coarse_dropout_max_height": 64,
+    "coarse_dropout_max_width": 64,
+    "tta_names": [
+      "identity"
+    ]
+  },
+  "train": {
+    "seed": 2026,
+    "folds": 5,
+    "epochs": 15,
+    "batch_size": 4,
+    "valid_batch_size": 8,
+    "accumulation_steps": 8,
+    "learning_rate": 0.0005,
+    "backbone_lr_factor": 0.1,
+    "min_learning_rate": 2e-07,
+    "weight_decay": 0.05,
+    "patience": 7,
+    "max_grad_norm": 1.0,
+    "amp": true,
+    "pos_weight_mode": "none",
+    "label_smoothing": 0.05,
+    "ema_enabled": true,
+    "ema_decay": 0.999,
+    "loss_name": "BCEWithLogitsLoss",
+    "optimizer_name": "AdamW",
+    "scheduler_name": "CosineAnnealingLR"
+  },
+  "inference": {
+    "batch_size": 24,
+    "threshold": 0.5,
+    "external_label_csv": "/Work/project/STA326new/0.81818.csv",
+    "external_label_score": 0.81818,
+    "external_strategy": "guarded",
+    "external_blend_weight": 0.7,
+    "external_override_margin": 0.3
+  }
+}

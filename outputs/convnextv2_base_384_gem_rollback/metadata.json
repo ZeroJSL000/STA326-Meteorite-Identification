@@ -1,0 +1,138 @@
+{
+  "experiment_id": "EXP-20260527-200410-convnextv2_base_384_gem_rollback",
+  "completed_at": "2026-05-27T20:04:10+08:00",
+  "experiment_name": "convnextv2_base_384_gem_rollback",
+  "model_name": "convnextv2_base.fcmae_ft_in22k_in1k",
+  "image_size": 384,
+  "folds": 5,
+  "checkpoint_files": [
+    "fold_0_best.pth",
+    "fold_1_best.pth",
+    "fold_2_best.pth",
+    "fold_3_best.pth",
+    "fold_4_best.pth"
+  ],
+  "fold_metrics": [
+    {
+      "fold": 0,
+      "positive_count": 2148,
+      "negative_count": 1930,
+      "pos_weight": 0.8985102420856611,
+      "f1": 0.9962825278810409,
+      "precision": 0.9944341372912802,
+      "recall": 0.9981378026070763,
+      "threshold": 0.76,
+      "positive_predictions": 539
+    },
+    {
+      "fold": 1,
+      "positive_count": 2148,
+      "negative_count": 1930,
+      "pos_weight": 0.8985102420856611,
+      "f1": 0.9916123019571296,
+      "precision": 0.9925373134328358,
+      "recall": 0.9906890130353817,
+      "threshold": 0.12,
+      "positive_predictions": 536
+    },
+    {
+      "fold": 2,
+      "positive_count": 2148,
+      "negative_count": 1930,
+      "pos_weight": 0.8985102420856611,
+      "f1": 0.9944237918215614,
+      "precision": 0.9925788497217068,
+      "recall": 0.9962756052141527,
+      "threshold": 0.23,
+      "positive_predictions": 539
+    },
+    {
+      "fold": 3,
+      "positive_count": 2148,
+      "negative_count": 1931,
+      "pos_weight": 0.898975791433892,
+      "f1": 0.9916743755781684,
+      "precision": 0.9852941176470589,
+      "recall": 0.9981378026070763,
+      "threshold": 0.87,
+      "positive_predictions": 544
+    },
+    {
+      "fold": 4,
+      "positive_count": 2148,
+      "negative_count": 1931,
+      "pos_weight": 0.898975791433892,
+      "f1": 0.9907749077490775,
+      "precision": 0.9817184643510055,
+      "recall": 1.0,
+      "threshold": 0.48,
+      "positive_predictions": 547
+    }
+  ],
+  "oof_metrics": {
+    "f1": 0.9914529914529915,
+    "precision": 0.989247311827957,
+    "recall": 0.9936685288640595,
+    "threshold": 0.82,
+    "positive_predictions": 2697
+  },
+  "optimal_threshold_file": "/root/project/stage2/outputs/convnextv2_base_384_gem_rollback/optimal_threshold.json",
+  "config": {
+    "experiment_name": "convnextv2_base_384_gem_rollback",
+    "paths": {
+      "data_dir": "/root/project/stage2/data",
+      "weights_dir": "/root/project/stage2/weights",
+      "outputs_dir": "/root/project/stage2/outputs",
+      "docs_dir": "/root/project/stage2/docs",
+      "train_image_dir": "/root/project/stage2/data/train_images",
+      "test_image_dir": "/root/project/stage2/data/test_images",
+      "train_csv": "/root/project/stage2/data/train_labels.csv",
+      "sample_submission_csv": "/root/project/stage2/data/sample_submission.csv"
+    },
+    "data": {
+      "id_col": "id",
+      "label_col": "label",
+      "image_size": 384,
+      "num_workers": 8
+    },
+    "model": {
+      "name": "convnextv2_base.fcmae_ft_in22k_in1k",
+      "drop_rate": 0.0,
+      "drop_path_rate": 0.0,
+      "gem_p": 3.0,
+      "use_pretrained": true,
+      "pretrained_file": "convnextv2_base.fcmae_ft_in22k_in1k.pth"
+    },
+    "augment": {
+      "color_jitter": 0.45,
+      "clahe_probability": 0.6,
+      "geometry_probability": 0.5,
+      "degradation_probability": 0.35,
+      "coarse_dropout_probability": 0.45,
+      "tta_names": [
+        "identity"
+      ]
+    },
+    "train": {
+      "seed": 2026,
+      "folds": 5,
+      "epochs": 24,
+      "batch_size": 8,
+      "valid_batch_size": 16,
+      "accumulation_steps": 2,
+      "learning_rate": 3e-05,
+      "min_learning_rate": 2e-07,
+      "weight_decay": 0.05,
+      "patience": 7,
+      "max_grad_norm": 1.0,
+      "amp": true,
+      "loss_name": "BCEWithLogitsLoss",
+      "optimizer_name": "AdamW",
+      "scheduler_name": "CosineAnnealingLR"
+    },
+    "inference": {
+      "batch_size": 24,
+      "threshold": 0.5
+    }
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "experiment_id": "EXP-20260602-113451-swinv2_base_384_minimal_pseudo0818",
+  "completed_at": "2026-06-02T11:34:51+08:00",
+  "experiment_name": "swinv2_base_384_minimal_pseudo0818",
+  "model_name": "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k",
+  "image_size": 384,
+  "folds": 5,
+  "checkpoint_files": [
+    "fold_0_best.pth",
+    "fold_1_best.pth",
+    "fold_2_best.pth",
+    "fold_3_best.pth",
+    "fold_4_best.pth"
+  ],
+  "fold_metrics": [
+    {
+      "fold": 0,
+      "positive_count": 771,
+      "negative_count": 600,
+      "class_ratio": 0.7782101167315175,
+      "loss_pos_weight": null,
+      "f1": 0.9498525073746312,
+      "precision": 0.9583333333333334,
+      "recall": 0.9415204678362573,
+      "threshold": 0.51,
+      "positive_predictions": 168
+    },
+    {
+      "fold": 1,
+      "positive_count": 771,
+      "negative_count": 600,
+      "class_ratio": 0.7782101167315175,
+      "loss_pos_weight": null,
+      "f1": 0.9449275362318841,
+      "precision": 0.9367816091954023,
+      "recall": 0.9532163742690059,
+      "threshold": 0.45,
+      "positive_predictions": 174
+    },
+    {
+      "fold": 2,
+      "positive_count": 772,
+      "negative_count": 600,
+      "class_ratio": 0.7772020725388601,
+      "loss_pos_weight": null,
+      "f1": 0.9418604651162791,
+      "precision": 0.9310344827586207,
+      "recall": 0.9529411764705882,
+      "threshold": 0.46,
+      "positive_predictions": 174
+    },
+    {
+      "fold": 3,
+      "positive_count": 772,
+      "negative_count": 600,
+      "class_ratio": 0.7772020725388601,
+      "loss_pos_weight": null,
+      "f1": 0.9529411764705882,
+      "precision": 0.9529411764705882,
+      "recall": 0.9529411764705882,
+      "threshold": 0.44,
+      "positive_predictions": 170
+    },
+    {
+      "fold": 4,
+      "positive_count": 772,
+      "negative_count": 600,
+      "class_ratio": 0.7772020725388601,
+      "loss_pos_weight": null,
+      "f1": 0.9258160237388724,
+      "precision": 0.9341317365269461,
+      "recall": 0.9176470588235294,
+      "threshold": 0.42,
+      "positive_predictions": 167
+    }
+  ],
+  "oof_metrics": {
+    "f1": 0.9380841121495327,
+    "precision": 0.9337209302325581,
+    "recall": 0.9424882629107981,
+    "threshold": 0.44,
+    "positive_predictions": 860
+  },
+  "optimal_threshold_file": "/Work/project/STA326new/outputs/swinv2_base_384_minimal_pseudo0818/optimal_threshold.json",
+  "ema_enabled": true,
+  "ema_decay": 0.999,
+  "checkpoint_source": "ema",
+  "pseudo_label_enabled": true,
+  "pseudo_label_csv": "/Work/project/STA326new/0.81818.csv",
+  "pseudo_label_weight": 0.4,
+  "config": {
+    "experiment_name": "swinv2_base_384_minimal_pseudo0818",
+    "config_path": "/Work/project/STA326new/configs/swinv2_base_384_minimal_pseudo0818.yaml",
+    "paths": {
+      "data_dir": "/Work/project/STA326new/data_final_hard_answer",
+      "weights_dir": "/Work/project/STA326new/weights",
+      "outputs_dir": "/Work/project/STA326new/outputs",
+      "docs_dir": "/Work/project/STA326new/docs",
+      "train_image_dir": "/Work/project/STA326new/data_final_hard_answer/train_images",
+      "test_image_dir": "/Work/project/STA326new/data_final_hard_answer/test_images",
+      "train_csv": "/Work/project/STA326new/data_final_hard_answer/train_labels.csv",
+      "sample_submission_csv": "/Work/project/STA326new/data_final_hard_answer/sample_submission.csv"
+    },
+    "data": {
+      "id_col": "id",
+      "label_col": "label",
+      "image_size": 384,
+      "num_workers": 8
+    },
+    "model": {
+      "name": "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k",
+      "pooling": "gap",
+      "drop_rate": 0.0,
+      "drop_path_rate": 0.0,
+      "use_pretrained": true,
+      "pretrained_file": "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k.pth"
+    },
+    "augment": {
+      "mode": "minimal",
+      "color_jitter": 0.45,
+      "clahe_probability": 0.6,
+      "geometry_probability": 0.5,
+      "degradation_probability": 0.35,
+      "coarse_dropout_enabled": true,
+      "coarse_dropout_probability": 0.45,
+      "coarse_dropout_max_holes": 8,
+      "coarse_dropout_max_height": 64,
+      "coarse_dropout_max_width": 64,
+      "tta_names": [
+        "identity"
+      ]
+    },
+    "train": {
+      "seed": 2026,
+      "folds": 5,
+      "epochs": 8,
+      "batch_size": 4,
+      "valid_batch_size": 8,
+      "accumulation_steps": 8,
+      "learning_rate": 0.0005,
+      "backbone_lr_factor": 0.1,
+      "min_learning_rate": 2e-07,
+      "weight_decay": 0.05,
+      "patience": 7,
+      "max_grad_norm": 1.0,
+      "amp": true,
+      "pos_weight_mode": "none",
+      "label_smoothing": 0.05,
+      "ema_enabled": true,
+      "ema_decay": 0.999,
+      "loss_name": "BCEWithLogitsLoss",
+      "optimizer_name": "AdamW",
+      "scheduler_name": "CosineAnnealingLR"
+    },
+    "inference": {
+      "batch_size": 24,
+      "threshold": 0.5,
+      "external_label_csv": "/Work/project/STA326new/0.81818.csv",
+      "external_label_score": 0.81818,
+      "external_strategy": "guarded",
+      "external_blend_weight": 0.7,
+      "external_override_margin": 0.3
+    },
+    "pseudo_label": {
+      "enabled": true,
+      "csv": "/Work/project/STA326new/0.81818.csv",
+      "weight": 0.4
+    }
+  }
+}

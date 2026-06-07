@@ -1,0 +1,58 @@
+{
+  "experiment_name": "convnextv2_base_384_gem_rollback",
+  "paths": {
+    "data_dir": "/root/project/stage2/data",
+    "weights_dir": "/root/project/stage2/weights",
+    "outputs_dir": "/root/project/stage2/outputs",
+    "docs_dir": "/root/project/stage2/docs",
+    "train_image_dir": "/root/project/stage2/data/train_images",
+    "test_image_dir": "/root/project/stage2/data/test_images",
+    "train_csv": "/root/project/stage2/data/train_labels.csv",
+    "sample_submission_csv": "/root/project/stage2/data/sample_submission.csv"
+  },
+  "data": {
+    "id_col": "id",
+    "label_col": "label",
+    "image_size": 384,
+    "num_workers": 8
+  },
+  "model": {
+    "name": "convnextv2_base.fcmae_ft_in22k_in1k",
+    "drop_rate": 0.0,
+    "drop_path_rate": 0.0,
+    "gem_p": 3.0,
+    "use_pretrained": true,
+    "pretrained_file": "convnextv2_base.fcmae_ft_in22k_in1k.pth"
+  },
+  "augment": {
+    "color_jitter": 0.45,
+    "clahe_probability": 0.6,
+    "geometry_probability": 0.5,
+    "degradation_probability": 0.35,
+    "coarse_dropout_probability": 0.45,
+    "tta_names": [
+      "identity"
+    ]
+  },
+  "train": {
+    "seed": 2026,
+    "folds": 5,
+    "epochs": 24,
+    "batch_size": 8,
+    "valid_batch_size": 16,
+    "accumulation_steps": 2,
+    "learning_rate": 3e-05,
+    "min_learning_rate": 2e-07,
+    "weight_decay": 0.05,
+    "patience": 7,
+    "max_grad_norm": 1.0,
+    "amp": true,
+    "loss_name": "BCEWithLogitsLoss",
+    "optimizer_name": "AdamW",
+    "scheduler_name": "CosineAnnealingLR"
+  },
+  "inference": {
+    "batch_size": 24,
+    "threshold": 0.5
+  }
+}

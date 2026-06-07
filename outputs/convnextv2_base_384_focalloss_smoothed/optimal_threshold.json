@@ -1,0 +1,17 @@
+{
+  "experiment_id": "EXP-20260527-163053-convnextv2_base_384_focalloss_smoothed",
+  "experiment_name": "convnextv2_base_384_focalloss_smoothed",
+  "source": "out_of_fold_predictions",
+  "metric": "f1_score",
+  "search_min": 0.25,
+  "search_max": 0.75,
+  "search_step": 0.01,
+  "optimal_threshold": 0.71,
+  "oof_metrics": {
+    "f1": 0.9929289170078154,
+    "precision": 0.9921904053551506,
+    "recall": 0.9936685288640595,
+    "threshold": 0.71,
+    "positive_predictions": 2689
+  }
+}

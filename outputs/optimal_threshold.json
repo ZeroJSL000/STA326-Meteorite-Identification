@@ -1,0 +1,17 @@
+{
+  "experiment_id": "EXP-20260602-113451-swinv2_base_384_minimal_pseudo0818",
+  "experiment_name": "swinv2_base_384_minimal_pseudo0818",
+  "source": "out_of_fold_predictions",
+  "metric": "f1_score",
+  "search_min": 0.1,
+  "search_max": 0.9,
+  "search_step": 0.01,
+  "optimal_threshold": 0.44,
+  "oof_metrics": {
+    "f1": 0.9380841121495327,
+    "precision": 0.9337209302325581,
+    "recall": 0.9424882629107981,
+    "threshold": 0.44,
+    "positive_predictions": 860
+  }
+}
