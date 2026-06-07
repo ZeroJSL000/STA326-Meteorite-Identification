@@ -458,136 +458,74 @@
 - 阈值文件: `/root/project/stage2/outputs/beit_base_patch16_384_baseline/optimal_threshold.json`
 - Kaggle LB Score: `待补充`
 - 后续推断改进方向: 待补充
-## EXP-20260531-133906-convnextv2_base_384_final_hard_answer
+## EXP-20260530-234153-cswin_masked_baseline
 
-- 时间: 2026-05-31T13:39:06+08:00
-- 实验名: `convnextv2_base_384_final_hard_answer`
-- Config: `/Work/project/STA326new/configs/convnextv2_base_384_final_hard_answer.yaml`
+- 时间: 2026-05-30T23:41:53+08:00
+- 实验名: `cswin_masked_baseline`
+- Config: `/root/project/stage2/configs/cswin_masked_baseline.yaml`
+- Backbone: `cswin_base_384`
+- Pooling: `GAP (timm default)`
+- 图像尺寸: `384 x 384`
+- Loss: `BCEWithLogitsLoss()`
+- pos_weight_mode: `none`
+- Label Smoothing: `0.0500`
+- EMA: `enabled=True, decay=0.999000`
+- Optimizer: `AdamW` with LLRD
+- LLRD: `head_lr=1.00e-04`, `backbone_lr=1.00e-05`
+- Scheduler: `CosineAnnealingLR`
+- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=8, max_height=64, max_width=64); valid/test: aspect-safe resize-pad + Normalize only
+
+| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2148 | 1930 | 0.898510 | plain_bce | 0.990689 |
+| 1 | 2148 | 1930 | 0.898510 | plain_bce | 0.986867 |
+| 2 | 2148 | 1930 | 0.898510 | plain_bce | 0.989824 |
+| 3 | 2148 | 1931 | 0.898976 | plain_bce | 0.987061 |
+| 4 | 2148 | 1931 | 0.898976 | plain_bce | 0.979667 |
+
+- OOF F1: `0.985475`
+- OOF 最优阈值: `0.600000`
+- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
+- 阈值文件: `/root/project/stage2/outputs/cswin_masked_baseline/optimal_threshold.json`
+- Kaggle LB Score: `待补充`
+- 后续推断改进方向: 待补充
+## EXP-20260531-021129-convnextv2_masked_baseline
+
+- 时间: 2026-05-31T02:11:29+08:00
+- 实验名: `convnextv2_masked_baseline`
+- Config: `/root/project/stage2/configs/convnextv2_masked_baseline.yaml`
 - Backbone: `convnextv2_base.fcmae_ft_in22k_in1k`
 - Pooling: `GAP (timm default)`
 - 图像尺寸: `384 x 384`
-- Loss: `BCEWithLogitsLoss()`
-- pos_weight_mode: `none`
-- Label Smoothing: `0.0500`
+- Loss: `BCEWithLogitsLoss(pos_weight=fold_negative/fold_positive)`
+- pos_weight_mode: `dynamic`
+- Label Smoothing: `0.0000`
 - EMA: `enabled=True, decay=0.999000`
 - Optimizer: `AdamW` with LLRD
-- LLRD: `head_lr=5.00e-04`, `backbone_lr=5.00e-05`
+- LLRD: `head_lr=1.00e-04`, `backbone_lr=1.00e-05`
 - Scheduler: `CosineAnnealingLR`
-- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=4, max_height=48, max_width=48); valid/test: aspect-safe resize-pad + Normalize only
+- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=8, max_height=64, max_width=64); valid/test: aspect-safe resize-pad + Normalize only
 
 | Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | 681 | 496 | 0.728341 | plain_bce | 0.958580 |
-| 1 | 681 | 496 | 0.728341 | plain_bce | 0.943820 |
-| 2 | 682 | 496 | 0.727273 | plain_bce | 0.964497 |
-| 3 | 682 | 496 | 0.727273 | plain_bce | 0.954023 |
-| 4 | 682 | 496 | 0.727273 | plain_bce | 0.962963 |
+| 0 | 991 | 682 | 0.688194 | 0.688194 | 0.974052 |
+| 1 | 991 | 682 | 0.688194 | 0.688194 | 0.954733 |
+| 2 | 991 | 683 | 0.689203 | 0.689203 | 0.969450 |
+| 3 | 991 | 683 | 0.689203 | 0.689203 | 0.971660 |
+| 4 | 992 | 682 | 0.687500 | 0.687500 | 0.973737 |
 
-- OOF F1: `0.945899`
-- OOF 最优阈值: `0.520000`
-- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
-- 阈值文件: `/Work/project/STA326new/outputs/convnextv2_base_384_final_hard_answer/optimal_threshold.json`
-- Kaggle LB Score: `待补充`
-- 后续推断改进方向: 待补充
-## EXP-20260531-151412-swin_base_384_final_hard_answer
-
-- 时间: 2026-05-31T15:14:12+08:00
-- 实验名: `swin_base_384_final_hard_answer`
-- Config: `/Work/project/STA326new/configs/swin_base_384_final_hard_answer.yaml`
-- Backbone: `swin_base_patch4_window12_384.ms_in22k_ft_in1k`
-- Pooling: `GAP (timm default)`
-- 图像尺寸: `384 x 384`
-- Loss: `BCEWithLogitsLoss()`
-- pos_weight_mode: `none`
-- Label Smoothing: `0.0500`
-- EMA: `enabled=True, decay=0.999000`
-- Optimizer: `AdamW` with LLRD
-- LLRD: `head_lr=5.00e-04`, `backbone_lr=5.00e-05`
-- Scheduler: `CosineAnnealingLR`
-- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=4, max_height=48, max_width=48); valid/test: aspect-safe resize-pad + Normalize only
-
-| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | 681 | 496 | 0.728341 | plain_bce | 0.965909 |
-| 1 | 681 | 496 | 0.728341 | plain_bce | 0.948864 |
-| 2 | 682 | 496 | 0.727273 | plain_bce | 0.967742 |
-| 3 | 682 | 496 | 0.727273 | plain_bce | 0.951009 |
-| 4 | 682 | 496 | 0.727273 | plain_bce | 0.950437 |
-
-- OOF F1: `0.952601`
-- OOF 最优阈值: `0.490000`
-- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
-- 阈值文件: `/Work/project/STA326new/outputs/swin_base_384_final_hard_answer/optimal_threshold.json`
-- Kaggle LB Score: `待补充`
-- 后续推断改进方向: 待补充
-## EXP-20260531-165420-swin_base_384_friend_cleaned_raw
-
-- 时间: 2026-05-31T16:54:20+08:00
-- 实验名: `swin_base_384_friend_cleaned_raw`
-- Config: `/Work/project/STA326new/configs/swin_base_384_friend_cleaned_raw.yaml`
-- Backbone: `swin_base_patch4_window12_384.ms_in22k_ft_in1k`
-- Pooling: `GAP (timm default)`
-- 图像尺寸: `384 x 384`
-- Loss: `BCEWithLogitsLoss()`
-- pos_weight_mode: `none`
-- Label Smoothing: `0.0500`
-- EMA: `enabled=True, decay=0.999000`
-- Optimizer: `AdamW` with LLRD
-- LLRD: `head_lr=5.00e-04`, `backbone_lr=5.00e-05`
-- Scheduler: `CosineAnnealingLR`
-- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=4, max_height=48, max_width=48); valid/test: aspect-safe resize-pad + Normalize only
-
-| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | 2129 | 1807 | 0.848755 | plain_bce | 0.987884 |
-| 1 | 2129 | 1808 | 0.849225 | plain_bce | 0.985915 |
-| 2 | 2130 | 1807 | 0.848357 | plain_bce | 0.986867 |
-| 3 | 2130 | 1807 | 0.848357 | plain_bce | 0.978444 |
-| 4 | 2130 | 1807 | 0.848357 | plain_bce | 0.982193 |
-
-- OOF F1: `0.982917`
-- OOF 最优阈值: `0.560000`
-- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
-- 阈值文件: `/Work/project/STA326new/outputs/swin_base_384_friend_cleaned_raw/optimal_threshold.json`
-- Kaggle LB Score: `待补充`
-- 后续推断改进方向: 待补充
-## EXP-20260531-185100-convnextv2_base_384_friend_cleaned_raw
-
-- 时间: 2026-05-31T18:51:00+08:00
-- 实验名: `convnextv2_base_384_friend_cleaned_raw`
-- Config: `/Work/project/STA326new/configs/convnextv2_base_384_friend_cleaned_raw.yaml`
-- Backbone: `convnextv2_base.fcmae_ft_in22k_in1k`
-- Pooling: `GAP (timm default)`
-- 图像尺寸: `384 x 384`
-- Loss: `BCEWithLogitsLoss()`
-- pos_weight_mode: `none`
-- Label Smoothing: `0.0500`
-- EMA: `enabled=True, decay=0.999000`
-- Optimizer: `AdamW` with LLRD
-- LLRD: `head_lr=5.00e-04`, `backbone_lr=5.00e-05`
-- Scheduler: `CosineAnnealingLR`
-- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=4, max_height=48, max_width=48); valid/test: aspect-safe resize-pad + Normalize only
-
-| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | 2129 | 1807 | 0.848755 | plain_bce | 0.988806 |
-| 1 | 2129 | 1808 | 0.849225 | plain_bce | 0.985019 |
-| 2 | 2130 | 1807 | 0.848357 | plain_bce | 0.984127 |
-| 3 | 2130 | 1807 | 0.848357 | plain_bce | 0.977444 |
-| 4 | 2130 | 1807 | 0.848357 | plain_bce | 0.983146 |
-
-- OOF F1: `0.981723`
+- OOF F1: `0.967638`
 - OOF 最优阈值: `0.400000`
 - 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
-- 阈值文件: `/Work/project/STA326new/outputs/convnextv2_base_384_friend_cleaned_raw/optimal_threshold.json`
+- 阈值文件: `/root/project/stage2/outputs/convnextv2_masked_baseline/optimal_threshold.json`
 - Kaggle LB Score: `待补充`
 - 后续推断改进方向: 待补充
-## EXP-20260602-023718-swinv2_base_384_minimal_external_081818
+## EXP-20260531-113852-cswin_masked_baseline
 
-- 时间: 2026-06-02T02:37:18+08:00
-- 实验名: `swinv2_base_384_minimal_external_081818`
-- Config: `/Work/project/STA326new/configs/swinv2_base_384_minimal_external_081818.yaml`
-- Backbone: `swinv2_base_window12to24_192to384.ms_in22k_ft_in1k`
+- 时间: 2026-05-31T11:38:52+08:00
+- 实验名: `cswin_masked_baseline`
+- Config: `/root/project/stage2/configs/cswin_masked_baseline.yaml`
+- Backbone: `cswin_base_384`
 - Pooling: `GAP (timm default)`
 - 图像尺寸: `384 x 384`
 - Loss: `BCEWithLogitsLoss()`
@@ -595,52 +533,215 @@
 - Label Smoothing: `0.0500`
 - EMA: `enabled=True, decay=0.999000`
 - Optimizer: `AdamW` with LLRD
-- LLRD: `head_lr=5.00e-04`, `backbone_lr=5.00e-05`
+- LLRD: `head_lr=1.00e-04`, `backbone_lr=1.00e-05`
 - Scheduler: `CosineAnnealingLR`
-- 数据增强: minimal: LongestMaxSize + zero PadIfNeeded + Normalize + ToTensor only; no color/geometric/degradation/dropout augmentation
+- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=8, max_height=64, max_width=64); valid/test: aspect-safe resize-pad + Normalize only
 
 | Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | 681 | 496 | 0.728341 | plain_bce | 0.961194 |
-| 1 | 681 | 496 | 0.728341 | plain_bce | 0.951289 |
-| 2 | 682 | 496 | 0.727273 | plain_bce | 0.955224 |
-| 3 | 682 | 496 | 0.727273 | plain_bce | 0.964706 |
-| 4 | 682 | 496 | 0.727273 | plain_bce | 0.960000 |
+| 0 | 991 | 682 | 0.688194 | plain_bce | 0.957576 |
+| 1 | 991 | 682 | 0.688194 | plain_bce | 0.960000 |
+| 2 | 991 | 683 | 0.689203 | plain_bce | 0.956701 |
+| 3 | 991 | 683 | 0.689203 | plain_bce | 0.973843 |
+| 4 | 992 | 682 | 0.687500 | plain_bce | 0.958904 |
 
-- OOF F1: `0.954545`
-- OOF 最优阈值: `0.460000`
-- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
-- 阈值文件: `/Work/project/STA326new/outputs/swinv2_base_384_minimal_external_081818/optimal_threshold.json`
-- Kaggle LB Score: `待补充`
-- 后续推断改进方向: 待补充
-## EXP-20260602-113451-swinv2_base_384_minimal_pseudo0818
-
-- 时间: 2026-06-02T11:34:51+08:00
-- 实验名: `swinv2_base_384_minimal_pseudo0818`
-- Config: `/Work/project/STA326new/configs/swinv2_base_384_minimal_pseudo0818.yaml`
-- Backbone: `swinv2_base_window12to24_192to384.ms_in22k_ft_in1k`
-- Pooling: `GAP (timm default)`
-- 图像尺寸: `384 x 384`
-- Loss: `BCEWithLogitsLoss()`
-- pos_weight_mode: `none`
-- Label Smoothing: `0.0500`
-- EMA: `enabled=True, decay=0.999000`
-- Optimizer: `AdamW` with LLRD
-- LLRD: `head_lr=5.00e-04`, `backbone_lr=5.00e-05`
-- Scheduler: `CosineAnnealingLR`
-- 数据增强: minimal: LongestMaxSize + zero PadIfNeeded + Normalize + ToTensor only; no color/geometric/degradation/dropout augmentation
-
-| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | 771 | 600 | 0.778210 | plain_bce | 0.949853 |
-| 1 | 771 | 600 | 0.778210 | plain_bce | 0.944928 |
-| 2 | 772 | 600 | 0.777202 | plain_bce | 0.941860 |
-| 3 | 772 | 600 | 0.777202 | plain_bce | 0.952941 |
-| 4 | 772 | 600 | 0.777202 | plain_bce | 0.925816 |
-
-- OOF F1: `0.938084`
+- OOF F1: `0.958500`
 - OOF 最优阈值: `0.440000`
 - 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
-- 阈值文件: `/Work/project/STA326new/outputs/swinv2_base_384_minimal_pseudo0818/optimal_threshold.json`
+- 阈值文件: `/root/project/stage2/outputs/cswin_masked_baseline/optimal_threshold.json`
+- Kaggle LB Score: `待补充`
+- 后续推断改进方向: 待补充
+## EXP-20260531-165153-convnextv2_masked_baseline
+
+- 时间: 2026-05-31T16:51:53+08:00
+- 实验名: `convnextv2_masked_baseline`
+- Config: `/root/project/stage2/configs/convnextv2_masked_baseline.yaml`
+- Backbone: `convnextv2_base.fcmae_ft_in22k_in1k`
+- Pooling: `GAP (timm default)`
+- 图像尺寸: `384 x 384`
+- Loss: `BCEWithLogitsLoss(pos_weight=fold_negative/fold_positive)`
+- pos_weight_mode: `dynamic`
+- Label Smoothing: `0.0000`
+- EMA: `enabled=True, decay=0.999000`
+- Optimizer: `AdamW` with LLRD
+- LLRD: `head_lr=1.00e-04`, `backbone_lr=1.00e-05`
+- Scheduler: `CosineAnnealingLR`
+- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=8, max_height=64, max_width=64); valid/test: aspect-safe resize-pad + Normalize only
+
+| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2129 | 1807 | 0.848755 | 0.848755 | 0.986989 |
+| 1 | 2129 | 1808 | 0.849225 | 0.849225 | 0.981203 |
+| 2 | 2130 | 1807 | 0.848357 | 0.848357 | 0.981308 |
+| 3 | 2130 | 1807 | 0.848357 | 0.848357 | 0.972616 |
+| 4 | 2130 | 1807 | 0.848357 | 0.848357 | 0.984934 |
+
+- OOF F1: `0.980686`
+- OOF 最优阈值: `0.420000`
+- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
+- 阈值文件: `/root/project/stage2/outputs/convnextv2_masked_baseline/optimal_threshold.json`
+- Kaggle LB Score: `待补充`
+- 后续推断改进方向: 待补充
+## EXP-20260531-202016-convnextv2_phase1_smoke
+
+- 时间: 2026-05-31T20:20:16+08:00
+- 实验名: `convnextv2_phase1_smoke`
+- Config: `/root/project/stage2/configs/convnextv2_phase1_smoke.yaml`
+- Backbone: `convnextv2_base.fcmae_ft_in22k_in1k`
+- Pooling: `GAP (timm default)`
+- 图像尺寸: `128 x 128`
+- Loss: `FocalLoss(gamma=2.0000, alpha=0.2500)`
+- pos_weight_mode: `dynamic`
+- Label Smoothing: `0.1000`
+- Logit Adjustment: `False`
+- Train Positive Prior: `0.500000`
+- EMA: `enabled=False, decay=0.999000`
+- Optimizer: `AdamW` with LLRD
+- LLRD: `head_lr=1.00e-04`, `backbone_lr=1.00e-06`
+- Scheduler: `CosineAnnealingLR`
+- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=8, max_height=64, max_width=64); valid/test: aspect-safe resize-pad + Normalize only
+
+| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2129 | 1807 | 0.848755 | 0.848755 | 0.772922 |
+
+- OOF F1: `0.772922`
+- OOF 最优阈值: `0.400000`
+- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
+- 阈值文件: `/root/project/stage2/outputs/convnextv2_phase1_smoke/optimal_threshold.json`
+- Kaggle LB Score: `待补充`
+- 后续推断改进方向: 待补充
+## EXP-20260601-100102-cswin_masked_baseline
+
+> 状态: 无效实验。CSWin 在 `float16` AMP 下发生非有限梯度；产物已归档至 `outputs/archive_invalid/cswin_masked_baseline_invalid_fp16_nan_20260601/`。请使用 `train.amp_dtype: bfloat16` 重跑。
+
+- 时间: 2026-06-01T10:01:02+08:00
+- 实验名: `cswin_masked_baseline`
+- Config: `/root/project/stage2/configs/cswin_masked_baseline.yaml`
+- Backbone: `cswin_base_384`
+- Pooling: `GAP (timm default)`
+- 图像尺寸: `384 x 384`
+- Loss: `BCEWithLogitsLoss()`
+- pos_weight_mode: `none`
+- Label Smoothing: `0.0500`
+- Logit Adjustment: `False`
+- Train Positive Prior: `0.500000`
+- EMA: `enabled=True, decay=0.999000`
+- Optimizer: `AdamW` with LLRD
+- LLRD: `head_lr=1.00e-04`, `backbone_lr=1.00e-05`
+- Scheduler: `CosineAnnealingLR`
+- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=8, max_height=64, max_width=64); valid/test: aspect-safe resize-pad + Normalize only
+
+| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2129 | 1807 | 0.848755 | plain_bce | 0.729201 |
+| 1 | 2129 | 1808 | 0.849225 | plain_bce | 0.704286 |
+| 2 | 2130 | 1807 | 0.848357 | plain_bce | 0.688963 |
+| 3 | 2130 | 1807 | 0.848357 | plain_bce | 0.645512 |
+| 4 | 2130 | 1807 | 0.848357 | plain_bce | 0.660208 |
+
+- OOF F1: `0.682197`
+- OOF 最优阈值: `0.400000`
+- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
+- 阈值文件: `/root/project/stage2/outputs/cswin_masked_baseline/optimal_threshold.json`
+- Kaggle LB Score: `待补充`
+- 后续推断改进方向: 待补充
+## EXP-20260601-130117-cswin_masked_baseline
+
+- 时间: 2026-06-01T13:01:17+08:00
+- 实验名: `cswin_masked_baseline`
+- Config: `/root/project/stage2/configs/cswin_masked_baseline.yaml`
+- Backbone: `cswin_base_384`
+- Pooling: `GAP (timm default)`
+- 图像尺寸: `384 x 384`
+- Loss: `BCEWithLogitsLoss()`
+- pos_weight_mode: `none`
+- Label Smoothing: `0.0500`
+- Logit Adjustment: `False`
+- Train Positive Prior: `0.500000`
+- EMA: `enabled=True, decay=0.999000`
+- Optimizer: `AdamW` with LLRD
+- LLRD: `head_lr=1.00e-04`, `backbone_lr=1.00e-05`
+- Scheduler: `CosineAnnealingLR`
+- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=8, max_height=64, max_width=64); valid/test: aspect-safe resize-pad + Normalize only
+
+| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2129 | 1807 | 0.848755 | plain_bce | 0.985968 |
+| 1 | 2129 | 1808 | 0.849225 | plain_bce | 0.983051 |
+| 2 | 2130 | 1807 | 0.848357 | plain_bce | 0.971805 |
+| 3 | 2130 | 1807 | 0.848357 | plain_bce | 0.973684 |
+| 4 | 2130 | 1807 | 0.848357 | plain_bce | 0.976526 |
+
+- OOF F1: `0.977435`
+- OOF 最优阈值: `0.560000`
+- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
+- 阈值文件: `/root/project/stage2/outputs/cswin_masked_baseline/optimal_threshold.json`
+- Kaggle LB Score: `待补充`
+- 后续推断改进方向: 待补充
+## EXP-20260601-180049-convnextv2_masked_baseline
+
+- 时间: 2026-06-01T18:00:49+08:00
+- 实验名: `convnextv2_masked_baseline`
+- Config: `/root/project/stage2/configs/convnextv2_masked_baseline.yaml`
+- Backbone: `convnextv2_base.fcmae_ft_in22k_in1k`
+- Pooling: `GAP (timm default)`
+- 图像尺寸: `384 x 384`
+- Loss: `BCEWithLogitsLoss(pos_weight=fold_negative/fold_positive)`
+- pos_weight_mode: `dynamic`
+- Label Smoothing: `0.0000`
+- Logit Adjustment: `False`
+- Train Positive Prior: `0.500000`
+- EMA: `enabled=True, decay=0.999000`
+- Optimizer: `AdamW` with LLRD
+- LLRD: `head_lr=1.00e-04`, `backbone_lr=1.00e-05`
+- Scheduler: `CosineAnnealingLR`
+- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=8, max_height=64, max_width=64); valid/test: aspect-safe resize-pad + Normalize only
+
+| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2129 | 1807 | 0.848755 | 0.848755 | 0.983302 |
+| 1 | 2129 | 1808 | 0.849225 | 0.849225 | 0.981203 |
+| 2 | 2130 | 1807 | 0.848357 | 0.848357 | 0.982260 |
+| 3 | 2130 | 1807 | 0.848357 | 0.848357 | 0.974552 |
+| 4 | 2130 | 1807 | 0.848357 | 0.848357 | 0.983019 |
+
+- OOF F1: `0.979592`
+- OOF 最优阈值: `0.410000`
+- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
+- 阈值文件: `/root/project/stage2/outputs/convnextv2_masked_baseline/optimal_threshold.json`
+- Kaggle LB Score: `待补充`
+- 后续推断改进方向: 待补充
+## EXP-20260601-210229-convnextv2_phase3_pseudo
+
+- 时间: 2026-06-01T21:02:29+08:00
+- 实验名: `convnextv2_phase3_pseudo`
+- Config: `/root/project/stage2/configs/convnextv2_phase3_pseudo.yaml`
+- Backbone: `convnextv2_base.fcmae_ft_in22k_in1k`
+- Pooling: `GAP (timm default)`
+- 图像尺寸: `384 x 384`
+- Loss: `BCEWithLogitsLoss(pos_weight=fold_negative/fold_positive)`
+- pos_weight_mode: `dynamic`
+- Label Smoothing: `0.0000`
+- Logit Adjustment: `False`
+- Train Positive Prior: `0.500000`
+- EMA: `enabled=True, decay=0.999000`
+- Optimizer: `AdamW` with LLRD
+- LLRD: `head_lr=3.30e-05`, `backbone_lr=3.30e-06`
+- Scheduler: `CosineAnnealingLR`
+- 数据增强: LongestMaxSize(384) + zero PadIfNeeded(384) + ShiftScaleRotate + ColorJitter + RandomGamma + HueSaturationValue + CLAHE + Blur/GaussNoise/ImageCompression + CoarseDropout(max_holes=8, max_height=64, max_width=64); valid/test: aspect-safe resize-pad + Normalize only
+
+| Fold | Train Positive | Train Negative | Class Ratio | Loss Weight | Best Valid F1 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2159 | 1831 | 0.848078 | 0.848078 | 0.983302 |
+| 1 | 2159 | 1832 | 0.848541 | 0.848541 | 0.981203 |
+| 2 | 2160 | 1831 | 0.847685 | 0.847685 | 0.983209 |
+| 3 | 2160 | 1831 | 0.847685 | 0.847685 | 0.977444 |
+| 4 | 2160 | 1831 | 0.847685 | 0.847685 | 0.983019 |
+
+- OOF F1: `0.980539`
+- OOF 最优阈值: `0.420000`
+- 阈值搜索: `0.10..0.90, step=0.01, maximize F1`
+- 阈值文件: `/root/project/stage2/outputs/convnextv2_phase3_pseudo/optimal_threshold.json`
 - Kaggle LB Score: `待补充`
 - 后续推断改进方向: 待补充

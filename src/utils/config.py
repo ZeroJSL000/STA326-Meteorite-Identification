@@ -56,7 +56,9 @@ class PathConfig:
     )
     train_image_dir: Path = field(init=False)
     test_image_dir: Path = field(init=False)
+    original_image_dir: Path = field(init=False)
     train_csv: Path = field(init=False)
+    pseudo_labels_csv: Path = field(init=False)
     sample_submission_csv: Path = field(init=False)
 
     def __post_init__(self) -> None:
@@ -66,8 +68,14 @@ class PathConfig:
         self.test_image_dir = Path(
             os.getenv("TEST_IMAGE_DIR", self.data_dir / "test_images")
         )
+        self.original_image_dir = Path(
+            os.getenv("ORIGINAL_IMAGE_DIR", self.data_dir / "train_images")
+        )
         self.train_csv = Path(
             os.getenv("TRAIN_CSV", self.data_dir / "train_labels.csv")
+        )
+        self.pseudo_labels_csv = Path(
+            os.getenv("PSEUDO_LABELS_CSV", self.data_dir / "pseudo_labels.csv")
         )
         self.sample_submission_csv = Path(
             os.getenv(
@@ -111,13 +119,13 @@ class ModelConfig:
             "convnextv2_base.fcmae_ft_in22k_in1k.pth",
         )
     )
+    patch_size: int = 32
 
 
 @dataclass
 class AugmentConfig:
     """训练图像增强参数；验证与推理始终保持形态。"""
 
-    mode: str = "strong"
     color_jitter: float = 0.45
     clahe_probability: float = 0.6
     geometry_probability: float = 0.5
@@ -128,6 +136,25 @@ class AugmentConfig:
     coarse_dropout_max_height: int = 64
     coarse_dropout_max_width: int = 64
     tta_names: tuple[str, ...] = ("identity",)
+    randaugment_enabled: bool = False
+    randaugment_num_ops: int = 9
+    randaugment_magnitude: int = 10
+    mixup_enabled: bool = False
+    mixup_probability: float = 0.5
+    mixup_alpha: float = 0.4
+    cutmix_enabled: bool = False
+    cutmix_probability: float = 0.5
+    cutmix_alpha: float = 1.0
+    multiscale_train_enabled: bool = False
+    multiscale_train_sizes: tuple[int, ...] = (320, 352, 384, 416, 448)
+
+
+@dataclass
+class PreprocessingConfig:
+    """可选的掩码图预处理策略。"""
+
+    soft_masking_enabled: bool = False
+    soft_masking_alpha: float = 0.7
 
 
 @dataclass
@@ -136,6 +163,7 @@ class TrainConfig:
 
     seed: int = field(default_factory=lambda: _env_int("SEED", 2026))
     folds: int = field(default_factory=lambda: _env_int("N_FOLDS", 5))
+    fold_limit: int | None = None
     epochs: int = field(default_factory=lambda: _env_int("EPOCHS", 24))
     batch_size: int = field(default_factory=lambda: _env_int("TRAIN_BATCH_SIZE", 8))
     valid_batch_size: int = field(
@@ -159,11 +187,21 @@ class TrainConfig:
     patience: int = field(default_factory=lambda: _env_int("PATIENCE", 7))
     max_grad_norm: float = 1.0
     amp: bool = field(default_factory=lambda: _env_bool("AMP", True))
+    amp_dtype: str = field(default_factory=lambda: os.getenv("AMP_DTYPE", "float16"))
     pos_weight_mode: str = "none"
     label_smoothing: float = 0.0
     ema_enabled: bool = False
     ema_decay: float = 0.999
     loss_name: str = "BCEWithLogitsLoss"
+    loss_type: str = "bce"
+    focal_gamma: float = 2.0
+    focal_alpha: float = 0.25
+    use_logit_adjustment: bool = False
+    train_pos_prior: float = 0.5
+    hard_mining_enabled: bool = False
+    hard_mining_topk: float = 0.1
+    hard_mining_boost: float = 3.0
+    hard_mining_oof_path: Path | None = None
     optimizer_name: str = "AdamW"
     scheduler_name: str = "CosineAnnealingLR"
 
@@ -176,21 +214,51 @@ class InferenceConfig:
     threshold: float = field(
         default_factory=lambda: _env_float("FALLBACK_THRESHOLD", 0.5)
     )
-    external_label_csv: Path | None = None
-    external_label_score: float | None = None
-    external_strategy: str = "none"
-    external_blend_weight: float = 0.70
-    external_override_margin: float = 0.30
-    target_positive_count: int | None = None
-
+    tta_enabled: bool = False
+    tta_scales: tuple[int, ...] = (384, 448, 512)
+    tta_flips: tuple[str, ...] = ("none", "horizontal")
 
 @dataclass
 class PseudoLabelConfig:
-    """将外部 test-set 预测作为低权重 pseudo labels 参与训练。"""
+    """Co-teaching 伪标签筛选与重训练参数。"""
 
     enabled: bool = False
-    csv: Path | None = None
-    weight: float = 0.40
+    high_confidence_threshold: float = 0.95
+    low_confidence_threshold: float = 0.05
+    co_teaching_enabled: bool = True
+    co_teaching_agreement_threshold: float = 0.90
+    co_teaching_model_dirs: tuple[str, ...] = ("outputs/convnextv2", "outputs/eva02")
+    pseudo_sample_weight: float = 0.5
+    pseudo_lr_factor: float = 0.33
+    pseudo_epoch_factor: float = 0.5
+    init_checkpoint_dir: Path | None = None
+
+
+@dataclass
+class EnsembleConfig:
+    """校准阶段使用的集成 OOF 与测试概率路径。"""
+
+    oof_predictions: Path | None = None
+    test_probabilities: Path | None = None
+
+
+@dataclass
+class CalibrationConfig:
+    """温度缩放、label-shift 修正与全局阈值策略。"""
+
+    enabled: bool = False
+    temperature_scaling: bool = False
+    temperature_min: float = 0.1
+    temperature_max: float = 5.0
+    prior_pos_rate: float = 0.438
+    use_bayesian_correction: bool = False
+    train_pos_prior: float = 0.5
+    threshold_strategy: str = "auto"
+    f1_threshold_step: float = 0.001
+    threshold_iterations: int = 64
+    probability_epsilon: float = 1.0e-6
+    threshold_tie_breaker: float = 0.5
+
 
 
 @dataclass
@@ -208,9 +276,12 @@ class ExperimentConfig:
     data: DataConfig = field(default_factory=DataConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     augment: AugmentConfig = field(default_factory=AugmentConfig)
+    preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     inference: InferenceConfig = field(default_factory=InferenceConfig)
-    pseudo_label: PseudoLabelConfig = field(default_factory=PseudoLabelConfig)
+    pseudo_labeling: PseudoLabelConfig = field(default_factory=PseudoLabelConfig)
+    ensemble: EnsembleConfig = field(default_factory=EnsembleConfig)
+    calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
 
     @property
     def experiment_output_dir(self) -> Path:
@@ -284,6 +355,8 @@ def _apply_yaml(config: ExperimentConfig, payload: dict[str, Any], path: Path) -
         config.model.pretrained_file = str(model["pretrained_file"])
     elif config.model.name == "cswin_base_384":
         config.model.pretrained_file = "cswin_base_384.pth"
+    if "patch_size" in model:
+        config.model.patch_size = int(model["patch_size"])
     if "drop_rate" in model:
         config.model.drop_rate = float(model["drop_rate"])
     if "drop_path_rate" in model:
@@ -308,8 +381,44 @@ def _apply_yaml(config: ExperimentConfig, payload: dict[str, Any], path: Path) -
         config.train.pos_weight_mode = str(train["pos_weight_mode"]).lower()
     if "label_smoothing" in train:
         config.train.label_smoothing = float(train["label_smoothing"])
+    if "amp" in train:
+        config.train.amp = bool(train["amp"])
+    if "amp_dtype" in train:
+        config.train.amp_dtype = str(train["amp_dtype"]).lower()
+    if config.train.amp_dtype not in {"float16", "bfloat16"}:
+        raise ValueError("train.amp_dtype 仅支持 float16 或 bfloat16。")
     if not 0.0 <= config.train.label_smoothing < 1.0:
         raise ValueError("train.label_smoothing 必须在 [0, 1) 范围内。")
+    if "loss_type" in train:
+        config.train.loss_type = str(train["loss_type"]).lower()
+    if "focal_gamma" in train:
+        config.train.focal_gamma = float(train["focal_gamma"])
+    if "focal_alpha" in train:
+        config.train.focal_alpha = float(train["focal_alpha"])
+    if "use_logit_adjustment" in train:
+        config.train.use_logit_adjustment = bool(train["use_logit_adjustment"])
+    if "train_pos_prior" in train:
+        config.train.train_pos_prior = float(train["train_pos_prior"])
+    if config.train.loss_type not in {"bce", "focal"}:
+        raise ValueError("train.loss_type 仅支持 bce 或 focal。")
+    if config.train.focal_gamma < 0.0:
+        raise ValueError("train.focal_gamma 必须大于等于 0。")
+    if not 0.0 <= config.train.focal_alpha <= 1.0:
+        raise ValueError("train.focal_alpha 必须在 [0, 1] 范围内。")
+    if not 0.0 < config.train.train_pos_prior < 1.0:
+        raise ValueError("train.train_pos_prior 必须在 (0, 1) 范围内。")
+    if "hard_mining_enabled" in train:
+        config.train.hard_mining_enabled = bool(train["hard_mining_enabled"])
+    if "hard_mining_topk" in train:
+        config.train.hard_mining_topk = float(train["hard_mining_topk"])
+    if "hard_mining_boost" in train:
+        config.train.hard_mining_boost = float(train["hard_mining_boost"])
+    if "hard_mining_oof_path" in train:
+        config.train.hard_mining_oof_path = _as_path(train["hard_mining_oof_path"])
+    if not 0.0 < config.train.hard_mining_topk <= 0.5:
+        raise ValueError("train.hard_mining_topk 必须在 (0, 0.5] 范围内。")
+    if config.train.hard_mining_boost <= 0.0:
+        raise ValueError("train.hard_mining_boost 必须大于 0。")
     if config.train.pos_weight_mode not in {"dynamic", "none"}:
         raise ValueError("train.pos_weight_mode 仅支持 dynamic 或 none。")
     for key, attr, caster in (
@@ -324,6 +433,8 @@ def _apply_yaml(config: ExperimentConfig, payload: dict[str, Any], path: Path) -
     ):
         if key in train:
             setattr(config.train, attr, caster(train[key]))
+    if "fold_limit" in train:
+        config.train.fold_limit = int(train["fold_limit"])
 
     ema = payload.get("ema", {}) or train.get("ema", {}) or {}
     if not isinstance(ema, dict):
@@ -338,10 +449,6 @@ def _apply_yaml(config: ExperimentConfig, payload: dict[str, Any], path: Path) -
     augmentation = payload.get("augmentation", {}) or {}
     if not isinstance(augmentation, dict):
         raise TypeError("augmentation 配置必须是 mapping。")
-    if "mode" in augmentation:
-        config.augment.mode = str(augmentation["mode"]).lower()
-    if config.augment.mode not in {"strong", "minimal"}:
-        raise ValueError("augmentation.mode 仅支持 strong 或 minimal。")
     coarse = augmentation.get("coarse_dropout", {}) or {}
     if not isinstance(coarse, dict):
         raise TypeError("augmentation.coarse_dropout 必须是 mapping。")
@@ -355,6 +462,65 @@ def _apply_yaml(config: ExperimentConfig, payload: dict[str, Any], path: Path) -
         config.augment.coarse_dropout_max_height = int(coarse["max_height"])
     if "max_width" in coarse:
         config.augment.coarse_dropout_max_width = int(coarse["max_width"])
+
+    randaugment = augmentation.get("randaugment", {}) or {}
+    if not isinstance(randaugment, dict):
+        raise TypeError("augmentation.randaugment 必须是 mapping。")
+    if "enabled" in randaugment:
+        config.augment.randaugment_enabled = bool(randaugment["enabled"])
+    if "num_ops" in randaugment:
+        config.augment.randaugment_num_ops = int(randaugment["num_ops"])
+    if "magnitude" in randaugment:
+        config.augment.randaugment_magnitude = int(randaugment["magnitude"])
+    for key, attr, caster in (
+        ("mixup_enabled", "mixup_enabled", bool),
+        ("mixup_prob", "mixup_probability", float),
+        ("mixup_alpha", "mixup_alpha", float),
+        ("cutmix_enabled", "cutmix_enabled", bool),
+        ("cutmix_prob", "cutmix_probability", float),
+        ("cutmix_alpha", "cutmix_alpha", float),
+        ("multiscale_train_enabled", "multiscale_train_enabled", bool),
+    ):
+        if key in augmentation:
+            setattr(config.augment, attr, caster(augmentation[key]))
+    if "multiscale_train_sizes" in augmentation:
+        config.augment.multiscale_train_sizes = tuple(
+            int(size) for size in augmentation["multiscale_train_sizes"]
+        )
+    if config.model.patch_size <= 0:
+        raise ValueError("model.patch_size 必须大于 0。")
+    if config.augment.randaugment_num_ops <= 0:
+        raise ValueError("augmentation.randaugment.num_ops 必须大于 0。")
+    if config.augment.randaugment_magnitude < 0:
+        raise ValueError("augmentation.randaugment.magnitude 必须大于等于 0。")
+    if not 0.0 <= config.augment.mixup_probability <= 1.0:
+        raise ValueError("augmentation.mixup_prob 必须在 [0, 1] 范围内。")
+    if not 0.0 <= config.augment.cutmix_probability <= 1.0:
+        raise ValueError("augmentation.cutmix_prob 必须在 [0, 1] 范围内。")
+    if config.augment.mixup_alpha <= 0.0 or config.augment.cutmix_alpha <= 0.0:
+        raise ValueError("MixUp 与 CutMix alpha 必须大于 0。")
+    enabled_probability_sum = 0.0
+    if config.augment.mixup_enabled:
+        enabled_probability_sum += config.augment.mixup_probability
+    if config.augment.cutmix_enabled:
+        enabled_probability_sum += config.augment.cutmix_probability
+    if enabled_probability_sum > 1.0:
+        raise ValueError("启用的 MixUp 与 CutMix 概率之和不能超过 1。")
+    if not config.augment.multiscale_train_sizes:
+        raise ValueError("augmentation.multiscale_train_sizes 不能为空。")
+
+    preprocessing = payload.get("preprocessing", {}) or {}
+    if not isinstance(preprocessing, dict):
+        raise TypeError("preprocessing 配置必须是 mapping。")
+    soft_masking = preprocessing.get("soft_masking", {}) or {}
+    if not isinstance(soft_masking, dict):
+        raise TypeError("preprocessing.soft_masking 必须是 mapping。")
+    if "enabled" in soft_masking:
+        config.preprocessing.soft_masking_enabled = bool(soft_masking["enabled"])
+    if "mask_alpha" in soft_masking:
+        config.preprocessing.soft_masking_alpha = float(soft_masking["mask_alpha"])
+    if not 0.0 <= config.preprocessing.soft_masking_alpha <= 1.0:
+        raise ValueError("preprocessing.soft_masking.mask_alpha 必须在 [0, 1] 范围内。")
 
     data = payload.get("data", {}) or {}
     if not isinstance(data, dict):
@@ -373,45 +539,102 @@ def _apply_yaml(config: ExperimentConfig, payload: dict[str, Any], path: Path) -
         config.inference.batch_size = int(inference["batch_size"])
     if "threshold" in inference:
         config.inference.threshold = float(inference["threshold"])
-    if "external_label_csv" in inference:
-        config.inference.external_label_csv = _as_path(inference["external_label_csv"])
-    if "external_label_score" in inference:
-        config.inference.external_label_score = float(inference["external_label_score"])
-    if "external_strategy" in inference:
-        config.inference.external_strategy = str(inference["external_strategy"]).lower()
-    if "external_blend_weight" in inference:
-        config.inference.external_blend_weight = float(inference["external_blend_weight"])
-    if "external_override_margin" in inference:
-        config.inference.external_override_margin = float(
-            inference["external_override_margin"]
-        )
-    if "target_positive_count" in inference:
-        value = inference["target_positive_count"]
-        config.inference.target_positive_count = None if value is None else int(value)
-    if config.inference.external_strategy not in {"none", "blend", "guarded"}:
-        raise ValueError("inference.external_strategy 仅支持 none、blend 或 guarded。")
-    if not 0.0 <= config.inference.external_blend_weight <= 1.0:
-        raise ValueError("inference.external_blend_weight 必须在 [0, 1] 范围内。")
-    if not 0.0 <= config.inference.external_override_margin <= 1.0:
-        raise ValueError("inference.external_override_margin 必须在 [0, 1] 范围内。")
-    if config.inference.target_positive_count is not None and config.inference.target_positive_count < 0:
-        raise ValueError("inference.target_positive_count 必须非负。")
-
-    pseudo_label = payload.get("pseudo_label", {}) or {}
-    if not isinstance(pseudo_label, dict):
-        raise TypeError("pseudo_label 配置必须是 mapping。")
-    if "enabled" in pseudo_label:
-        config.pseudo_label.enabled = bool(pseudo_label["enabled"])
-    if "csv" in pseudo_label:
-        config.pseudo_label.csv = _as_path(pseudo_label["csv"])
-    if "weight" in pseudo_label:
-        config.pseudo_label.weight = float(pseudo_label["weight"])
-    if config.pseudo_label.enabled and config.pseudo_label.csv is None:
-        raise ValueError("pseudo_label.enabled=true 时必须设置 pseudo_label.csv。")
-    if not 0.0 < config.pseudo_label.weight <= 1.0:
-        raise ValueError("pseudo_label.weight 必须在 (0, 1] 范围内。")
+    test = payload.get("test", {}) or {}
+    if not isinstance(test, dict):
+        raise TypeError("test 配置必须是 mapping。")
+    if "tta_enabled" in test:
+        config.inference.tta_enabled = bool(test["tta_enabled"])
+    if "tta_scales" in test:
+        config.inference.tta_scales = tuple(int(scale) for scale in test["tta_scales"])
+    if "tta_flips" in test:
+        config.inference.tta_flips = tuple(str(flip).lower() for flip in test["tta_flips"])
+    if not config.inference.tta_scales:
+        raise ValueError("test.tta_scales 不能为空。")
+    if any(scale <= 0 for scale in config.inference.tta_scales):
+        raise ValueError("test.tta_scales 必须全部大于 0。")
+    supported_flips = {"none", "horizontal"}
+    if not config.inference.tta_flips or not set(config.inference.tta_flips) <= supported_flips:
+        raise ValueError(f"test.tta_flips 仅支持: {sorted(supported_flips)}")
 
     paths = payload.get("paths", {}) or {}
+    pseudo_labeling = payload.get("pseudo_labeling", {}) or {}
+    ensemble = payload.get("ensemble", {}) or {}
+    calibration = payload.get("calibration", {}) or {}
+    if not isinstance(pseudo_labeling, dict):
+        raise TypeError("pseudo_labeling 配置必须是 mapping。")
+    for key, attr, caster in (
+        ("enabled", "enabled", bool),
+        ("high_confidence_threshold", "high_confidence_threshold", float),
+        ("low_confidence_threshold", "low_confidence_threshold", float),
+        ("co_teaching_enabled", "co_teaching_enabled", bool),
+        ("co_teaching_agreement_threshold", "co_teaching_agreement_threshold", float),
+        ("pseudo_sample_weight", "pseudo_sample_weight", float),
+        ("pseudo_lr_factor", "pseudo_lr_factor", float),
+        ("pseudo_epoch_factor", "pseudo_epoch_factor", float),
+    ):
+        if key in pseudo_labeling:
+            setattr(config.pseudo_labeling, attr, caster(pseudo_labeling[key]))
+    if "co_teaching_model_dirs" in pseudo_labeling:
+        config.pseudo_labeling.co_teaching_model_dirs = tuple(
+            str(directory) for directory in pseudo_labeling["co_teaching_model_dirs"]
+        )
+    if "init_checkpoint_dir" in pseudo_labeling:
+        config.pseudo_labeling.init_checkpoint_dir = _as_path(pseudo_labeling["init_checkpoint_dir"])
+    if not 0.0 < config.pseudo_labeling.high_confidence_threshold < 1.0:
+        raise ValueError("pseudo_labeling.high_confidence_threshold 必须在 (0, 1) 范围内。")
+    if not 0.0 < config.pseudo_labeling.low_confidence_threshold < 1.0:
+        raise ValueError("pseudo_labeling.low_confidence_threshold 必须在 (0, 1) 范围内。")
+    if not 0.0 < config.pseudo_labeling.co_teaching_agreement_threshold < 1.0:
+        raise ValueError("pseudo_labeling.co_teaching_agreement_threshold 必须在 (0, 1) 范围内。")
+    if config.pseudo_labeling.pseudo_sample_weight <= 0.0:
+        raise ValueError("pseudo_labeling.pseudo_sample_weight 必须大于 0。")
+    if config.pseudo_labeling.pseudo_lr_factor <= 0.0:
+        raise ValueError("pseudo_labeling.pseudo_lr_factor 必须大于 0。")
+    if config.pseudo_labeling.pseudo_epoch_factor <= 0.0:
+        raise ValueError("pseudo_labeling.pseudo_epoch_factor 必须大于 0。")
+
+    if not isinstance(ensemble, dict):
+        raise TypeError("ensemble 配置必须是 mapping。")
+    if "oof_predictions" in ensemble:
+        config.ensemble.oof_predictions = _as_path(ensemble["oof_predictions"])
+    if "test_probabilities" in ensemble:
+        config.ensemble.test_probabilities = _as_path(ensemble["test_probabilities"])
+
+    if not isinstance(calibration, dict):
+        raise TypeError("calibration 配置必须是 mapping。")
+    for key, attr, caster in (
+        ("enabled", "enabled", bool),
+        ("temperature_scaling", "temperature_scaling", bool),
+        ("temperature_min", "temperature_min", float),
+        ("temperature_max", "temperature_max", float),
+        ("prior_pos_rate", "prior_pos_rate", float),
+        ("use_bayesian_correction", "use_bayesian_correction", bool),
+        ("train_pos_prior", "train_pos_prior", float),
+        ("threshold_strategy", "threshold_strategy", str),
+        ("f1_threshold_step", "f1_threshold_step", float),
+        ("threshold_iterations", "threshold_iterations", int),
+        ("probability_epsilon", "probability_epsilon", float),
+        ("threshold_tie_breaker", "threshold_tie_breaker", float),
+    ):
+        if key in calibration:
+            setattr(config.calibration, attr, caster(calibration[key]))
+    if not 0.0 < config.calibration.temperature_min < config.calibration.temperature_max:
+        raise ValueError("calibration 温度搜索区间非法。")
+    if not 0.0 < config.calibration.prior_pos_rate < 1.0:
+        raise ValueError("calibration.prior_pos_rate 必须在 (0, 1) 范围内。")
+    if not 0.0 < config.calibration.train_pos_prior < 1.0:
+        raise ValueError("calibration.train_pos_prior 必须在 (0, 1) 范围内。")
+    if config.calibration.threshold_strategy not in {"auto", "f1_optimal", "prior_aligned"}:
+        raise ValueError("calibration.threshold_strategy 仅支持 auto、f1_optimal 或 prior_aligned。")
+    if not 0.0 < config.calibration.f1_threshold_step <= 1.0:
+        raise ValueError("calibration.f1_threshold_step 必须在 (0, 1] 范围内。")
+    if config.calibration.threshold_iterations <= 0:
+        raise ValueError("calibration.threshold_iterations 必须大于 0。")
+    if not 0.0 < config.calibration.probability_epsilon < 0.5:
+        raise ValueError("calibration.probability_epsilon 必须在 (0, 0.5) 范围内。")
+    if not 0.0 <= config.calibration.threshold_tie_breaker <= 1.0:
+        raise ValueError("calibration.threshold_tie_breaker 必须在 [0, 1] 范围内。")
+
     if not isinstance(paths, dict):
         raise TypeError("paths 配置必须是 mapping。")
     for key in ("data_dir", "weights_dir", "outputs_dir", "docs_dir"):
@@ -420,6 +643,24 @@ def _apply_yaml(config: ExperimentConfig, payload: dict[str, Any], path: Path) -
                 config.paths, key, _as_path(paths[key]) or getattr(config.paths, key)
             )
     config.paths.__post_init__()
+    if "dataset_dir" in paths:
+        dataset_dir = _as_path(paths["dataset_dir"])
+        if dataset_dir is None:
+            raise ValueError("paths.dataset_dir 不能为空。")
+        config.paths.train_csv = dataset_dir / "train_labels.csv"
+        config.paths.train_image_dir = dataset_dir / "train_images"
+        config.paths.test_image_dir = dataset_dir / "test_images"
+        config.paths.pseudo_labels_csv = dataset_dir / "pseudo_labels.csv"
+    for key in (
+        "train_csv",
+        "train_image_dir",
+        "test_image_dir",
+        "original_image_dir",
+        "pseudo_labels_csv",
+        "sample_submission_csv",
+    ):
+        if key in paths:
+            setattr(config.paths, key, _as_path(paths[key]) or getattr(config.paths, key))
 
 
 def resolve_image_dir(directory: Path, expected_image: str | None = None) -> Path:

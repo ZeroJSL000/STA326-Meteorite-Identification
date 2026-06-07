@@ -1,120 +1,221 @@
-# 图像二分类 ConvNeXtV2 Baseline
+# Cascade Masked Image Classification Pipeline
 
-当前管线严格复现历史最佳方向：`convnextv2_base.fcmae_ft_in22k_in1k`、
-`384 x 384`、默认 GAP 池化、单 logit 分类头、动态加权
-`BCEWithLogitsLoss`、`AdamW` 与 `CosineAnnealingLR`。验证和测试图像
-只执行保持比例的缩放及零填充，不会将石头主体强行拉伸。
+## 项目概述
 
-## 环境安装
+本项目用于陨石 vs 非陨石二分类。完整流程包含级联掩码预处理、单模型训练、异构集成、co-teaching 伪标签迭代，以及 Temperature Scaling 与 Bayesian Label Shift Correction 校准。
+
+所有预训练权重均由用户手动放入 `weights/`。源码不会自动下载权重。
+
+## 目录结构
+
+```text
+configs/                  # YAML 实验配置
+scripts/                  # 预处理、训练和完整流水线脚本
+src/                      # 训练、推理、集成、伪标签和校准源码
+data/                     # 原始竞赛数据，本地保留，不上传 Git
+preData/                  # 级联掩码后的数据集，本地生成，不上传 Git
+weights/                  # 手动放置的预训练权重与训练 checkpoint，不上传 Git
+outputs/                  # 本地实验输出，不上传 Git
+docs/                     # 实验记录
+```
+
+核心数据结构：
+
+```text
+data/
+├── train_images/
+├── train_labels.csv
+├── test_images/
+└── sample_submission.csv
+
+preData/cascade_dataset/
+├── train_images/
+├── train_labels.csv
+├── test_images/
+└── pseudo_labels.csv       # Phase 3 生成后存在
+```
+
+## 环境准备
 
 项目使用 Python `3.14+` 与 `uv`：
 
 ```bash
-uv add torch torchvision timm pandas numpy scikit-learn albumentations tqdm pillow
+uv sync
 ```
 
-## 下载离线预训练权重
+将需要的离线权重手动放入 `weights/`。不要在源码中加入自动下载逻辑。
 
-训练代码仅从 `weights/` 读取初始化权重。首次在联网环境执行：
+## 快速开始
+
+### 1. 数据预处理
 
 ```bash
-mkdir -p weights
-uv run python - <<'PY'
-from pathlib import Path
-
-import timm
-import torch
-
-model_name = "convnextv2_base.fcmae_ft_in22k_in1k"
-output_path = Path("weights") / f"{model_name}.pth"
-model = timm.create_model(model_name, pretrained=True)
-torch.save(model.state_dict(), output_path)
-print(f"saved pretrained weights to: {output_path}")
-PY
+bash scripts/pre.sh        # 训练集
+bash scripts/pre_test.sh   # 测试集
 ```
 
-## 预处理与增强
+预处理结果写入 `preData/cascade_dataset/`。也可以从预处理到基线提交一次执行：
 
-验证和推理使用固定流程：
+```bash
+bash scripts/run_pipeline.sh configs/convnextv2_masked_baseline.yaml
+```
+
+### 2. 单模型训练（Phase 1）
+
+ConvNeXtV2 基线：
+
+```bash
+bash scripts/run_experiment.sh configs/convnextv2_masked_baseline.yaml
+```
+
+CSWin 基线：
+
+```bash
+bash scripts/run_experiment.sh configs/cswin_masked_baseline.yaml
+```
+
+`run_experiment.sh` 会依次调用 `src/train.py` 和 `src/predict.py`。Focal Loss、Soft-Masking、RandAugment、MixUp、CutMix、多尺度训练、hard sample mining 和 TTA 均由 YAML 开关控制；关闭开关时保留原始 BCE、单尺度、无 TTA 流程。
+
+### 3. 异构模型集成（Phase 2）
+
+`src/ensemble.py` 会输出 weighted blend、Logistic Regression stacking 和 rank averaging 三种结果：
+
+```bash
+uv run python src/ensemble.py \
+  --dirs outputs/convnextv2_masked_baseline outputs/cswin_masked_baseline \
+  --output-dir outputs/ensemble
+```
+
+如已训练更多模型，可继续在 `--dirs` 后追加实验目录。每个输入目录必须包含：
 
 ```text
-LongestMaxSize(max_size=384)
-PadIfNeeded(min_height=384, min_width=384, border_mode=BORDER_CONSTANT, fill=0)
-Normalize()
+oof_predictions.csv
+submission_probabilities.csv
 ```
 
-训练在该 aspect-safe 基础上加入 `ColorJitter`、`RandomGamma`、
-`HueSaturationValue`、`CLAHE`、`ShiftScaleRotate`、轻度模糊/噪声/JPEG
-压缩，以及由 YAML 控制的 `CoarseDropout`。
+### 4. 伪标签迭代（Phase 3）
 
-## 执行实验
+根据两个强模型的高置信共识生成伪标签：
 
 ```bash
-chmod +x scripts/run_experiment.sh
-./scripts/run_experiment.sh
+uv run python src/pseudo_label.py \
+  --config configs/convnextv2_phase3_pseudo.yaml
 ```
 
-当前实验升级为 YAML 配置驱动，默认读取 `configs/convnextv2_base_384_ema_smooth.yaml`：
+重新训练带伪标签的模型：
+
+```bash
+bash scripts/run_experiment.sh configs/convnextv2_phase3_pseudo.yaml
+```
+
+重新集成：
+
+```bash
+uv run python src/ensemble.py \
+  --dirs outputs/convnextv2_phase3_pseudo outputs/cswin_masked_baseline \
+  --output-dir outputs/ensemble_phase3
+```
+
+### 5. 概率校准与提交（Phase 4）
+
+Phase 4 直接复用已有 OOF 和测试概率，无需重新训练：
+
+```bash
+uv run python src/calibrate.py \
+  --config configs/ensemble_phase4_calibrated.yaml
+```
+
+当前配置读取 `outputs/ensemble_phase3/stacking_oof_predictions.csv` 和 `outputs/ensemble_phase3/stacking.csv`，输出到 `outputs/ensemble_phase4_calibrated/`：
+
+- `submission.csv`：当前 `auto` 策略选择的 OOF F1-optimal 阈值版。
+- `prior_aligned_submission.csv`：使用合法单一全局阈值对齐测试集先验的对照版，推荐提交。
+
+## 配置说明（YAML Schema）
+
+关键 YAML 字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `experiment_name` | 实验名称，同时决定 `outputs/<exp>/` 与 checkpoint 子目录 |
+| `paths.dataset_dir` | 级联掩码数据集根目录 |
+| `model.backbone` | timm 模型名称或仓库内注册模型名称 |
+| `model.pretrained_file` | `weights/` 下的离线预训练权重文件 |
+| `train.loss_type` | 损失函数：`bce` 或 `focal` |
+| `train.focal_gamma`, `train.focal_alpha` | Focal Loss 参数 |
+| `train.hard_mining_enabled` | 是否按历史 OOF loss 启用 hard sample mining |
+| `augmentation.randaugment.enabled` | 是否启用 RandAugment |
+| `augmentation.mixup_enabled`, `augmentation.cutmix_enabled` | 是否启用互斥的 MixUp / CutMix |
+| `augmentation.multiscale_train_sizes` | 每个 epoch 可随机采样的训练分辨率 |
+| `preprocessing.soft_masking.enabled` | 是否融合原图与掩码图 |
+| `test.tta_enabled`, `test.tta_scales` | 是否启用 TTA 及其尺度 |
+| `pseudo_labeling.enabled` | 是否合并高置信伪标签进行重训练 |
+| `pseudo_labeling.co_teaching_enabled` | 是否要求双模型共识筛选伪标签 |
+| `calibration.enabled` | 是否启用 Phase 4 校准；关闭时跳过校准逻辑 |
+| `calibration.prior_pos_rate` | 测试集先验正类率，当前为 `0.438` |
+| `calibration.use_bayesian_correction` | 是否启用 Bayesian Label Shift Correction |
+| `calibration.threshold_strategy` | `auto`、`f1_optimal` 或 `prior_aligned` |
+
+## 模型权重清单
+
+以下文件由用户手动准备。代码不会联网下载权重：
+
+| 模型 | 本地文件或配置方式 | 用途与来源说明 |
+| --- | --- | --- |
+| ConvNeXtV2 | `weights/convnextv2_base.fcmae_ft_in22k_in1k.pth` | 当前主力分类器；使用 timm 兼容的官方预训练权重 |
+| CSWin | `weights/cswin_base_384.pth` | 当前异构分类器；使用上游 CSWin 预训练权重 |
+| BEiT | `weights/beit_base_patch16_384.pth` | 可选 timm 分类器；使用 BEiT 预训练权重 |
+| EVA-02 | 当前未放置固定文件 | 可选扩展；手动准备 timm 兼容权重并在 YAML 中配置 |
+| MaxViT | 当前未放置固定文件 | 可选扩展；手动准备 timm 兼容权重并在 YAML 中配置 |
+| YOLO-World | `weights/yolov8l-worldv2.pt` | 级联预处理主体检测 |
+| U2-Net | `weights/u2net.onnx` | 级联预处理背景移除 |
+
+训练生成的折模型保存在 `weights/checkpoints/<experiment_name>/`。`weights/` 当前体积较大，仅在本地保留，不上传 Git。
+
+## 输出文件说明
+
+单模型输出位于 `outputs/<experiment_name>/`：
+
+| 文件 | 说明 |
+| --- | --- |
+| `oof_predictions.csv` | OOF 标签与概率，用于阈值搜索和集成 |
+| `submission_probabilities.csv` | 测试集概率 |
+| `submission.csv` | 单模型或校准后的 0/1 提交 |
+| `temperature.json` | Phase 4 的温度参数与校准前后 NLL |
+| `optimal_threshold.json` | F1 阈值、先验阈值、最终策略和正类率记录 |
+
+集成阶段还会生成 `weighted_blend.csv`、`stacking.csv`、`rank_avg.csv` 与对应 OOF 文件。
+
+## 提交策略建议
+
+**推荐提交文件**：`outputs/<exp>/prior_aligned_submission.csv`，其正类数量已根据先验知识（80~90/194）通过合法的全局阈值校准对齐。
+
+当前 Phase 4 实验的推荐文件为：
 
 ```text
-pos_weight = disabled (plain BCE)
-label_smoothing = 0.05
-EMA = enabled(decay=0.999)
-pooling = GAP (timm default)
-head_lr = 5e-4
-backbone_lr = 5e-5
-CoarseDropout = tuned(max_holes=4, max_size=48)
-OOF threshold search range = [0.10, 0.90], step=0.01
+outputs/ensemble_phase4_calibrated/prior_aligned_submission.csv
 ```
 
-推荐通过复制并修改 `configs/*.yaml` 管理新实验，例如：
-`bash scripts/run_experiment.sh configs/convnextv2_base_384_ema_smooth.yaml`。
-默认输出位于 `outputs/convnextv2_base_384_ema_smooth/`，模型
-checkpoint 位于 `weights/checkpoints/convnextv2_base_384_ema_smooth/`。
-每次完整训练结束后，
-`src/train.py` 会自动向 `docs/experiment_log.md` 追加配置、各折 F1 和
-OOF 阈值；提交线上分数后，在对应实验条目补充 LB Score 与结论。
+其次可提交 `outputs/ensemble_phase4_calibrated/submission.csv` 作为 OOF F1-optimal 对照。
 
+### 独立复现：SwinV2 纯模型 Top-86（无 Guarded Fusion）
 
-## SwinV2 minimal + 0.81818 强基线融合
-
-新增配置：`configs/swinv2_base_384_minimal_external_081818.yaml`。它使用本地
-timm 1.0.27 可用的较新 SwinV2：
-`swinv2_base_window12to24_192to384.ms_in22k_ft_in1k`。训练阶段设置
-`augmentation.mode: minimal`，只保留模型训练必须的 resize/pad、Normalize 和
-ToTensor，不再做颜色、几何、压缩、CLAHE 或 CoarseDropout 增强。
-
-首次使用 SwinV2 前需要准备离线权重：
+该独立对照版本使用训练期包含伪标签的 5 折 SwinV2 checkpoint。推理阶段只平均模型
+概率，不读取 API/外部标签，也不执行 guarded fusion；最终将概率最高的 86 张图片标记
+为正类。
 
 ```bash
-uv run python - <<'PY'
-from pathlib import Path
-
-import timm
-import torch
-
-model_name = "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k"
-output_path = Path("weights") / f"{model_name}.pth"
-model = timm.create_model(model_name, pretrained=True)
-torch.save(model.state_dict(), output_path)
-print(f"saved pretrained weights to: {output_path}")
-PY
+uv run python scripts/reproduce_swinv2_no_guarded.py
 ```
 
-运行：
+需要准备 `data_final_hard_answer/test_images/`、
+`data_final_hard_answer/sample_submission.csv`，以及
+`weights/checkpoints/swinv2_base_384_minimal_pseudo0818/` 下的 `metadata.json` 和
+5 个折模型。默认使用 `batch_size=32`，结果和运行清单写入
+`tmp/swinv2_base_384_minimal_pseudo0818_no_guarded/`。
 
-```bash
-bash scripts/run_experiment.sh configs/swinv2_base_384_minimal_external_081818.yaml
-```
+## 注意事项
 
-推理会读取项目根目录的 `0.81818.csv`。默认策略为 `guarded`：以该 CSV
-作为 0.81818 F1 的强基线，只在 SwinV2 与它不一致且 SwinV2 概率距离 OOF
-阈值至少 `external_override_margin` 时替换标签。输出包括：
-
-```text
-submission_model_only.csv          # SwinV2 单模型结果
-submission_external_baseline.csv   # 对齐后的 0.81818 强基线
-submission_external_guarded.csv    # guarded 融合候选
-external_disagreements.csv         # 两者不一致样本，按模型置信度排序
-submission.csv                     # 当前配置选定的最终提交
-```
+- 主推荐流程严禁使用 Top-K 截断；上面的无 Guarded Fusion 入口仅用于复现指定对照版本。
+- 测试集先验正类率配置为 `0.438`，即 `85 / 194` 附近，不是百分数。
+- `data/`、`preData/`、`weights/` 和 `outputs/` 均为本地数据或流程生成物，不上传 Git。
+- 使用新模型前，先手动放置离线权重，再在 YAML 中填写 `model.pretrained_file`。
