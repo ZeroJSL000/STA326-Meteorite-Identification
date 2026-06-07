@@ -197,9 +197,25 @@ outputs/ensemble_phase4_calibrated/prior_aligned_submission.csv
 
 其次可提交 `outputs/ensemble_phase4_calibrated/submission.csv` 作为 OOF F1-optimal 对照。
 
+### 独立复现：SwinV2 纯模型 Top-86（无 Guarded Fusion）
+
+该独立对照版本使用训练期包含伪标签的 5 折 SwinV2 checkpoint。推理阶段只平均模型
+概率，不读取 API/外部标签，也不执行 guarded fusion；最终将概率最高的 86 张图片标记
+为正类。
+
+```bash
+uv run python scripts/reproduce_swinv2_no_guarded.py
+```
+
+需要准备 `data_final_hard_answer/test_images/`、
+`data_final_hard_answer/sample_submission.csv`，以及
+`weights/checkpoints/swinv2_base_384_minimal_pseudo0818/` 下的 `metadata.json` 和
+5 个折模型。默认使用 `batch_size=32`，结果和运行清单写入
+`tmp/swinv2_base_384_minimal_pseudo0818_no_guarded/`。
+
 ## 注意事项
 
-- 严禁使用 Top-K 截断、`argsort()[-K:]` 或类似提交后处理。
+- 主推荐流程严禁使用 Top-K 截断；上面的无 Guarded Fusion 入口仅用于复现指定对照版本。
 - 测试集先验正类率配置为 `0.438`，即 `85 / 194` 附近，不是百分数。
 - `data/`、`preData/`、`weights/` 和 `outputs/` 均为本地数据或流程生成物，不上传 Git。
 - 使用新模型前，先手动放置离线权重，再在 YAML 中填写 `model.pretrained_file`。
