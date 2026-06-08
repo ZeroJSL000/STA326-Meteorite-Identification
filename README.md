@@ -81,7 +81,7 @@ unzip -o swinv2_base_384_minimal_pseudo.zip \
 The directory used by this code should be:
 
 ```text
-weights/checkpoints/swinv2_base_384_minimal_external/
+weights/checkpoints/swinv2_base_384_minimal_pseudo/
 ```
 
 Each checkpoint directory must contain `fold_0_best.pth` through `fold_4_best.pth` and `metadata.json`.
